@@ -3,6 +3,7 @@ import { db } from "../db.js";
 import { authMiddleware } from "../auth.js";
 import { parseJsonArray, daysBetweenInclusive, toIsoDate } from "../utils.js";
 import { ragJsonHeaders, ragUrl } from "../config/ragClient.js";
+import * as aiRepository from "../repositories/ai.repository.js";
 import {
   flattenSelectedOptionDays,
   resolveDestinationIdsFromSelection
@@ -25,7 +26,7 @@ export function registerAiRoutes(router) {
     const aiUrl = process.env.AI_MODEL_URL || "http://127.0.0.1:8000/chat";
 
     try {
-      const all = await db.query("SELECT id, name, category, rating, latitude, longitude, tags_json FROM destinations");
+      const all = await aiRepository.listDestinationsForAiSuggestion();
       const destinationsInfo = all.map((d) => ({
         id: d.id,
         name: d.name,
@@ -505,15 +506,7 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
 
         if (!rawPlaceId) continue;
 
-        const row = await db.get(
-          `
-        SELECT destination_id
-        FROM rag_places
-        WHERE place_id = ?
-        LIMIT 1
-        `,
-          [rawPlaceId]
-        );
+        const row = await aiRepository.getDestinationIdByRagPlaceId(rawPlaceId);
 
         if (row?.destination_id) {
           destinationIdByRawPlaceId.set(String(rawPlaceId), Number(row.destination_id));
