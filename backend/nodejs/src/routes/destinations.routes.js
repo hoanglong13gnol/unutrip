@@ -1,5 +1,5 @@
-import { db } from "../db.js";
 import { authMiddleware } from "../auth.js";
+import * as destinationsRepository from "../repositories/destinations.repository.js";
 import {
   attachDestinationImages,
   normalizeCategoryParam,
@@ -17,37 +17,15 @@ export function registerDestinationRoutes(router) {
     const province = (req.query.province ?? "").toString().trim() || null;
     const search = (req.query.search ?? "").toString().trim() || null;
 
-    const where = [];
-    const params = [];
-    if (category) {
-      where.push("category = ?");
-      params.push(category);
-    }
-    if (province) {
-      where.push("province = ?");
-      params.push(province);
-    }
-    if (search) {
-      where.push("(name LIKE ? OR description LIKE ? OR city LIKE ? OR province LIKE ?)");
-      const like = `%${search}%`;
-      params.push(like, like, like, like);
-    }
-
-    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const countRow = await db.get(`SELECT COUNT(*) as cnt FROM destinations ${whereSql}`, params);
-    const total = countRow.cnt;
-
-    const rows = await db.query(
-      `
-      SELECT d.*,
-        EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.destination_id = d.id) as is_favorite
-      FROM destinations d
-      ${whereSql}
-      ORDER BY d.rating DESC, d.review_count DESC, d.id DESC
-      LIMIT ? OFFSET ?
-    `,
-      [req.user.userId, ...params, limit, offset]
-    );
+    const total = await destinationsRepository.countDestinations({ category, province, search });
+    const rows = await destinationsRepository.listDestinations({
+      userId: req.user.userId,
+      category,
+      province,
+      search,
+      limit,
+      offset
+    });
 
     const rowsWithImages = await attachDestinationImages(rows);
     const data = rowsWithImages.map((r) => toDestinationDto(r, !!r.is_favorite));
@@ -55,16 +33,7 @@ export function registerDestinationRoutes(router) {
   });
 
   router.get("/destinations/featured", authMiddleware, async (req, res) => {
-    const rows = await db.query(
-      `
-      SELECT d.*,
-        EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.destination_id = d.id) as is_favorite
-      FROM destinations d
-      ORDER BY d.rating DESC, d.review_count DESC
-      LIMIT 5
-    `,
-      [req.user.userId]
-    );
+    const rows = await destinationsRepository.listFeaturedDestinations({ userId: req.user.userId, limit: 5 });
     const rowsWithImages = await attachDestinationImages(rows);
     const data = rowsWithImages.map((r) => toDestinationDto(r, !!r.is_favorite));
     return res.json({ success: true, data, total: data.length, page: 1, limit: data.length });
@@ -85,40 +54,13 @@ export function registerDestinationRoutes(router) {
         });
       }
 
-      const rows = await db.query(
-        `
-      SELECT
-        d.*,
-        (
-          6371 * ACOS(
-            LEAST(
-              1,
-              GREATEST(
-                -1,
-                COS(RADIANS(?)) *
-                COS(RADIANS(d.latitude)) *
-                COS(RADIANS(d.longitude) - RADIANS(?)) +
-                SIN(RADIANS(?)) *
-                SIN(RADIANS(d.latitude))
-              )
-            )
-          )
-        ) AS distance_km,
-        EXISTS(
-          SELECT 1
-          FROM favorites f
-          WHERE f.user_id = ?
-            AND f.destination_id = d.id
-        ) AS is_favorite
-      FROM destinations d
-      WHERE d.latitude IS NOT NULL
-        AND d.longitude IS NOT NULL
-      HAVING distance_km <= ?
-      ORDER BY distance_km ASC, d.rating DESC
-      LIMIT ?
-      `,
-        [lat, lng, lat, req.user.userId, radiusKm, limit]
-      );
+      const rows = await destinationsRepository.listNearbyDestinations({
+        userId: req.user.userId,
+        lat,
+        lng,
+        radiusKm,
+        limit
+      });
 
       console.log("[NEARBY]", {
         lat,
@@ -163,15 +105,7 @@ export function registerDestinationRoutes(router) {
 
   router.get("/destinations/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
-    const row = await db.get(
-      `
-      SELECT d.*,
-        EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.destination_id = d.id) as is_favorite
-      FROM destinations d
-      WHERE d.id = ?
-    `,
-      [req.user.userId, id]
-    );
+    const row = await destinationsRepository.getDestinationById({ userId: req.user.userId, id });
 
     if (!row) return res.status(404).json({ success: false, message: "Not found", data: null });
     const [rowWithImages] = await attachDestinationImages([row]);
