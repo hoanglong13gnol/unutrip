@@ -1,26 +1,12 @@
-import { apiOk, parseJsonArray } from "../utils.js";
+import { apiOk } from "../utils.js";
 import { authMiddleware } from "../auth.js";
 import { upload } from "./upload.js";
-import { getUserById } from "./helpers.js";
-import * as reviewsRepository from "../repositories/reviews.repository.js";
+import * as reviewsService from "../services/reviews.service.js";
 
 export function registerReviewRoutes(router) {
   router.get("/destinations/:id/reviews", authMiddleware, async (req, res) => {
     const destinationId = Number(req.params.id);
-    const rows = await reviewsRepository.listReviewsByDestinationId(destinationId);
-
-    const data = rows.map((r) => ({
-      id: r.id,
-      userId: r.user_id,
-      userName: r.user_name,
-      userAvatar: r.user_avatar,
-      destinationId: r.destination_id,
-      rating: r.rating,
-      comment: r.comment,
-      images: parseJsonArray(r.images_json, null),
-      createdAt: r.created_at
-    }));
-
+    const data = await reviewsService.listReviewsForDestination(destinationId);
     return res.json(apiOk(data, "OK"));
   });
 
@@ -34,41 +20,21 @@ export function registerReviewRoutes(router) {
         return res.status(400).json({ success: false, message: "Invalid payload", data: null });
       }
 
-      const destExists = await reviewsRepository.destinationExists(destinationId);
-      if (!destExists)
-        return res.status(404).json({ success: false, message: "Destination not found", data: null });
-
       const imageUrls = (req.files || []).map((f) => `/uploads/reviews/${f.filename}`);
-      const imagesJson = imageUrls.length > 0 ? JSON.stringify(imageUrls) : null;
 
-      const info = await reviewsRepository.insertReview({
+      const result = await reviewsService.createReview({
         userId: req.user.userId,
         destinationId,
         rating,
         comment,
-        imagesJson
+        imageUrls
       });
 
-      const agg = await reviewsRepository.getReviewAggregateByDestinationId(destinationId);
-      await reviewsRepository.updateDestinationReviewAggregate({
-        destinationId,
-        rating: Number(agg.avg ?? 0),
-        reviewCount: Number(agg.cnt ?? 0)
-      });
+      if (!result.ok && result.reason === "destination_not_found") {
+        return res.status(404).json({ success: false, message: "Destination not found", data: null });
+      }
 
-      const user = await getUserById(req.user.userId);
-      const review = {
-        id: Number(info.lastInsertRowid),
-        userId: req.user.userId,
-        userName: user.full_name,
-        userAvatar: user.avatar,
-        destinationId,
-        rating,
-        comment,
-        images: imageUrls.length > 0 ? imageUrls : null,
-        createdAt: new Date().toISOString()
-      };
-      return res.json(apiOk(review, "OK"));
+      return res.json(apiOk(result.review, "OK"));
     } catch (err) {
       console.error("Post review error:", err);
       return res.status(500).json({ success: false, message: "Server error", data: null });
