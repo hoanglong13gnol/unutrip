@@ -377,7 +377,7 @@ export function buildAdminRouter() {
       const stats = await db.get(`
         SELECT
           (SELECT COUNT(*) FROM users) as totalUsers,
-          (SELECT COUNT(*) FROM destinations) as totalDestinations,
+          (SELECT COUNT(*) FROM app_places) as totalDestinations,
           (SELECT COUNT(*) FROM itineraries) as totalItineraries
       `);
 
@@ -576,7 +576,7 @@ export function buildAdminRouter() {
   // 3. Quản lý Địa điểm
   router.get("/destinations", async (req, res) => {
     try {
-      const dests = await db.query("SELECT id, name, city, category, rating FROM destinations ORDER BY id DESC");
+      const dests = await db.query("SELECT id, name, city, category, rating FROM app_places ORDER BY id DESC");
       const content = `
         <div class="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col overflow-hidden animate-fadeIn">
             <div class="p-6 border-b border-gray-50 flex justify-between items-center bg-white">
@@ -764,35 +764,25 @@ export function buildAdminRouter() {
   });
 
   router.get("/destinations/api/:id", async (req, res) => {
-    const dest = await db.get("SELECT * FROM destinations WHERE id = ?", [req.params.id]);
+    const dest = await db.get(
+      "SELECT id, name, category, description, city, province, address, latitude, longitude, open_time, close_time FROM app_places WHERE id = ?",
+      [req.params.id]
+    );
     res.json(dest);
   });
 
   router.post("/destinations/save", async (req, res) => {
-    try {
-      const { id, name, description, address, city, province, latitude, longitude, category, open_time, close_time } = req.body;
-      
-      if (id) {
-        // Update
-        await db.run(`
-          UPDATE destinations SET 
-          name=?, description=?, address=?, city=?, province=?, latitude=?, longitude=?, category=?, open_time=?, close_time=?
-          WHERE id=?
-        `, [name, description, address, city, province, latitude, longitude, category, open_time, close_time, id]);
-      } else {
-        // Insert
-        await db.run(`
-          INSERT INTO destinations (name, description, address, city, province, latitude, longitude, category, open_time, close_time, images_json, tags_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]')
-        `, [name, description, address, city, province, latitude, longitude, category, open_time, close_time]);
-      }
-      res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    return res.status(501).json({
+      success: false,
+      message: "Admin place writes are disabled until app_places write policy is implemented"
+    });
   });
 
   router.post("/destinations/delete/:id", async (req, res) => {
-    await db.run("DELETE FROM destinations WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
+    return res.status(501).json({
+      success: false,
+      message: "Admin place writes are disabled until app_places write policy is implemented"
+    });
   });
 
   // 4. Hệ thống
@@ -1691,8 +1681,8 @@ json.textContent = JSON.stringify(data, null, 2);
   // 5. AI Report API
   router.get("/ai-report", async (req, res) => {
     try {
-      const catStats = await db.query("SELECT category, COUNT(*) as count FROM destinations GROUP BY category");
-      const overall = await db.get("SELECT AVG(rating) as avgRating FROM destinations");
+      const catStats = await db.query("SELECT category, COUNT(*) as count FROM app_places GROUP BY category");
+      const overall = await db.get("SELECT AVG(rating) as avgRating FROM app_places");
 
       const prompt = `Phân tích dữ liệu ứng dụng UnuTrip:
         - Thống kê danh mục địa điểm: ${JSON.stringify(catStats)}
