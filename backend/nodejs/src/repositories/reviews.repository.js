@@ -15,7 +15,7 @@ export async function listReviewsByDestinationId(destinationId) {
 }
 
 export async function destinationExists(destinationId) {
-  const row = await db.get("SELECT id FROM destinations WHERE id = ?", [destinationId]);
+  const row = await db.get("SELECT id FROM app_places WHERE id = ?", [destinationId]);
   return !!row;
 }
 
@@ -33,7 +33,7 @@ export async function getReviewAggregateByDestinationId(destinationId) {
 }
 
 export async function updateDestinationReviewAggregate({ destinationId, rating, reviewCount }) {
-  await db.run("UPDATE destinations SET rating = ?, review_count = ? WHERE id = ?", [
+  await db.run("UPDATE app_places SET rating = ?, review_count = ? WHERE id = ?", [
     rating,
     reviewCount,
     destinationId
