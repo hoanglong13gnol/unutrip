@@ -14,13 +14,56 @@
 
 ---
 
-## Locked decisions (confirmed)
+## Locked migration decisions (must follow in first SQL migration)
 
-- **App place id reuse (mandatory)**: `app_places.id` must reuse `destinations.id` in the first v2 migration.
-  - Legacy evidence: `destinations.id` is `int(11)` primary key with AUTO_INCREMENT in the dump.
-- **No new `app_places` ids generated in first cut**: numeric remap is explicitly disallowed in the current plan.
-- **`place_id_map` remains mandatory** even though numeric ids are reused:
-  - Required for `rag_place_id`, RAG `place_id`, AI `rawPlaceId`, image folder keys, and relationship tracing across legacy/v2.
+- **1) `app_places.id` rule**
+  - `app_places.id` must reuse `destinations.id`.
+  - No new `app_places` ids are generated in the first v2 migration.
+
+- **2) `place_key` rule**
+  - If `destinations.rag_place_id` is not null, use `destinations.rag_place_id`.
+  - Else if a `rag_places` row exists where `rag_places.destination_id = destinations.id`, use `rag_places.place_id`.
+  - Else generate `MANUAL_{destinations.id}`.
+  - Any generated `MANUAL_*` key must be recorded in `place_id_map.notes` for later manual review.
+
+- **3) Category rule (`app_places.category`)**
+  - Initial controlled list:
+    - `beach`, `checkin`, `city`, `culture`, `food`, `heritage`, `mountain`, `nature`, `religious`
+  - If legacy value `other` appears later, keep it but **flag it for review**.
+  - Do not invent new categories during migration.
+
+- **4) `destination_images.status` rule**
+  - Only `destination_images.status = active` is migrated into runtime `place_images`.
+  - Unknown or future status values must not be promoted automatically.
+  - Unknown statuses must be reported for review.
+
+- **5) Primary image rule**
+  - Prefer **active** `destination_images` rows.
+  - If one or more active rows have `is_primary = 1`, choose the row with the smallest `destination_images.id` as primary.
+  - If no active row has `is_primary = 1`, choose the active row with the smallest `destination_images.id` as primary.
+  - If there are no active `destination_images` rows, backfill from `destinations.images_json`.
+  - When backfilling from `images_json`, choose the first parsed URL as primary.
+  - If `images_json` cannot be parsed, leave `primary_image_url` null and report the destination id for review.
+
+- **6) `place_images` optional fields**
+  - `source_page_url`, `sort_order`, and `storage_type` are nullable.
+  - They are not required for first migration success.
+  - `source_page_url` and `sort_order` may be backfilled later from `images_json` or image pipeline data.
+
+- **7) RAG first-cut rule**
+  - `rag_places` is the primary source for the first `rag_knowledge_base` migration.
+  - `places_rag_documents.jsonl` is not required for the first SQL migration.
+  - JSONL ingestion is deferred to a later supplement phase after its schema is inspected.
+  - `knowledge_key` for rows migrated from `rag_places` should be derived deterministically from `rag_places.place_id`.
+  - `knowledge_type` for rows migrated from `rag_places` should be `place`.
+
+- **8) `rag_places.last_updated` rule**
+  - Keep `last_updated` as VARCHAR-compatible text in the first migration.
+  - Do not convert to DATETIME in the first migration.
+  - Datetime parsing can be handled in a later cleanup phase.
+
+- **Always: `place_id_map` remains mandatory**
+  - Even though numeric ids are reused, `place_id_map` is mandatory for `rag_place_id` / `place_id`, AI `rawPlaceId`, image folder keys, and legacy relationship tracing.
 
 ---
 
@@ -71,9 +114,9 @@ Rule for this matrix:
     - Legacy columns exist on `destinations` (`rating double`, `review_count int`), but v2 policy says app rating must be derived from `reviews`.
     - Reliable legacy source for computation: `reviews(destination_id, rating, ...)` with FK to `destinations.id`.
 
-- **Not reliable from legacy dump alone (must be locked as rules / Open Questions)**:
-  - `place_key`: legacy has `destinations.rag_place_id` nullable + `rag_places.place_id` non-null unique; but **generation/resolution when `destinations.rag_place_id` is NULL** is not defined by schema.
-  - `primary_image_url`: legacy has `destinations.images_json` plus normalized `destination_images` rows, but **exact precedence and derivation rules** must be locked (policy exists in docs; still requires precise rule).
+- **Now locked as migration rules (see “Locked migration decisions”)**:
+  - `place_key` rule (including `MANUAL_*` fallback + `place_id_map.notes`)
+  - `primary_image_url` derivation/selection rule (active `destination_images` first; `images_json` backfill)
 
 ### `place_images` (proposed) vs legacy
 
@@ -90,10 +133,10 @@ Legacy sources: `destination_images` (normalized) and `destinations.images_json`
   - `status` ← `destination_images.status` (varchar(50) default `'active'`; observed value `active` only)
   - `created_at`, `updated_at` (timestamps)
 
-- **Not reliable from legacy dump alone**:
-  - `source_page_url`: **no column** exists in `destination_images`. May exist inside `destinations.images_json` objects for some rows, but presence/shape is not guaranteed by schema.
-  - `sort_order`: **no column** exists in `destination_images`. Some ordering appears in `destinations.images_json` objects (`order`), but not schema-guaranteed.
-  - `storage_type`: not present in legacy schema; would require inference from URL/path rules.
+- **Not reliable from legacy dump alone, but explicitly allowed to be NULL in first migration** (locked decision):
+  - `source_page_url`
+  - `sort_order`
+  - `storage_type`
 
 ### `rag_knowledge_base` (proposed) vs legacy
 
@@ -108,57 +151,24 @@ Legacy source table: `rag_places`. Additional proposed source: `backend/rag/data
   - Scoring: `quality_score`
   - Source: `source`, `source_url`, `last_updated` (legacy type is `varchar(50)` for `last_updated`, not DATETIME)
 
-- **Not reliable from legacy dump alone (requires external definition / Open Questions)**:
-  - `knowledge_key`: not present in `rag_places`; would require a generation rule or JSONL field.
-  - `knowledge_type` allowed values: not present in `rag_places`; requires product/schema decision.
-  - JSONL field list + merge/cardinality rules: cannot be inferred from `unudata-v2.sql`.
-  - `embedding_status` / `index_status`: not present in `rag_places` schema.
+- **Locked for first migration**:
+  - `knowledge_key` is derived deterministically from `rag_places.place_id` for rows migrated from `rag_places`.
+  - `knowledge_type = place` for rows migrated from `rag_places`.
+  - JSONL (`places_rag_documents.jsonl`) ingestion is deferred (not required for first SQL migration).
+
+- **Remaining not reliable from legacy dump alone (deferred / optional)**:
+  - JSONL field list + merge/cardinality rules
+  - `embedding_status` / `index_status`
 
 ---
 
-## Decisions to lock next (before migration SQL)
+## Remaining Open Questions (not required for first SQL migration)
 
-These must be resolved explicitly; otherwise migration SQL cannot be “database-first and deterministic”.
-
-- **`place_key` definition and precedence**
-  - Candidate sources:
-    - `destinations.rag_place_id` (nullable, unique when not null)
-    - `rag_places.place_id` (non-null, unique)
-    - `destination_images.rag_place_id` (nullable)
-  - Required: deterministic rule for cases where:
-    - `destinations.rag_place_id` is NULL
-    - A destination has images with `rag_place_id` but the destination does not
-    - Any mismatch between `rag_places.destination_id` and destination row’s `rag_place_id`
-
-- **Primary image derivation**
-  - If `destination_images` has 1+ rows for a destination:
-    - rule for choosing primary (`is_primary`? first by id? other?) must be locked.
-  - When `destination_images` has zero rows:
-    - whether/how to parse `destinations.images_json` (string list vs object list) must be locked.
-
-- **`destination_images.status` semantics**
-  - Only `active` is observed in the dump, but migration must define:
-    - whether other statuses are possible in production (and how they map to v2).
-
-- **`destinations.category` controlled list**
-  - The dump shows exactly 9 values used. Lock this as the initial controlled list (unless direction doc says otherwise) and decide how to handle:
-    - legacy default `other` (exists as default but not observed in inserted data)
-
----
-
-## Open Questions (do not guess)
-
-1. **`place_key` rule when `destinations.rag_place_id` is NULL**: generate new key vs derive from other legacy fields vs allow null?
-2. **Image metadata gap**:
-   - Should v2 persist `source_page_url` and `sort_order`?
-   - If yes, is legacy `destinations.images_json` considered authoritative enough, and what are accepted shapes (string vs object)?
-3. **RAG JSONL integration**:
-   - Exact schema/fields in `places_rag_documents.jsonl` (not represented in `unudata-v2.sql`).
-   - Cardinality: one row per place vs many knowledge rows per place.
-   - `knowledge_key` generation rule.
-   - Allowed values list for `knowledge_type`.
-4. **`rag_places.last_updated` type**:
-   - Legacy type is `varchar(50)`; if v2 uses `DATETIME`, define parse rules and failure handling.
-5. **Whether any legacy-only fields remain required in v2 validation**:
-   - `destinations.images_json`, `image_source`, `image_credit` exist in schema; decide if they remain as legacy-only validation or are promoted into v2 tables.
+1. **JSONL schema for `places_rag_documents.jsonl`**: field names, types, and linkage keys (deferred supplement phase).
+2. **JSONL cardinality rules**: merge into one knowledge row per place vs keep multiple retrievable documents per place (deferred).
+3. **`embedding_status` / `index_status`**: whether these are stored in MySQL vs inferred/maintained in filesystem/runtime (deferred).
+4. **Image metadata backfill policy**:
+   - Exact parsing/normalization rules across mixed `destinations.images_json` shapes (string list vs object list) beyond “first URL as primary”.
+   - Backfill sources priority between `images_json` objects vs image pipeline data (deferred).
+5. **Reporting format/target for “must be reported” items** (unknown statuses, `MANUAL_*` keys, primary conflicts, images_json parse failures): where these reports live (table, file, or operational log) is not locked in docs yet.
 
