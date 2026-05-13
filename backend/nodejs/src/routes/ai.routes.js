@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { db } from "../db.js";
 import { authMiddleware } from "../auth.js";
-import { parseJsonArray, daysBetweenInclusive, toIsoDate } from "../utils.js";
-import { ragJsonHeaders, ragUrl } from "../config/ragClient.js";
+import { daysBetweenInclusive, toIsoDate } from "../utils.js";
 import {
+  generateSuggestItineraryAiResult,
   requestItineraryOptions,
   requestItineraryPreview,
   requestLocalAiChatAnswer,
@@ -30,88 +30,24 @@ export function registerAiRoutes(router) {
 
     const { preferences, startDate, endDate, budget } = parsed.data;
     const totalDays = daysBetweenInclusive(startDate, endDate);
-    const aiUrl = process.env.AI_MODEL_URL || "http://127.0.0.1:8000/chat";
 
     try {
-      const all = await aiRepository.listDestinationsForAiSuggestion();
-      const destinationsInfo = all.map((d) => ({
-        id: d.id,
-        name: d.name,
-        category: d.category,
-        rating: d.rating,
-        latitude: d.latitude,
-        longitude: d.longitude,
-        tags: parseJsonArray(d.tags_json, [])
-      }));
+      const genResult = await generateSuggestItineraryAiResult({
+        preferences,
+        startDate,
+        endDate,
+        budget,
+        totalDays,
+        userId: req.user.userId
+      });
 
-      const prompt = `Hãy đóng vai hướng dẫn viên du lịch ảo. Tạo lịch trình JSON cho chuyến đi:
-Sở thích: ${preferences.join(", ")}
-Thời gian: ${totalDays} ngày
-Ngân sách: ${budget ? budget + " VNĐ" : "tự do"}
-
-Dữ liệu địa điểm khả dụng (Sử dụng đúng ID):
-${JSON.stringify(destinationsInfo.slice(0, 50))}
-
-YÊU CẦU: Trả về JSON đúng cấu trúc:
-{
-  "title": "Tên chuyến đi",
-  "description": "Mô tả",
-  "days": [
-    { "dayNumber": 1, "items": [{ "destinationId": ID, "startTime": "08:00", "endTime": "10:00", "note": "Ghi chú" }] }
-  ]
-}`;
-
-      let responseText = "";
-      try {
-        console.log(`[AI] Generating itinerary for user ${req.user.userId}...`);
-        const aiRes = await fetch(aiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: prompt })
-        });
-        const aiData = await aiRes.json();
-        responseText = aiData.answer;
-        console.log(`[AI] Local AI response received (${responseText.length} chars)`);
-      } catch (err) {
-        console.warn("Local AI failed, falling back to RAG:", err.message);
-        const ragRes = await fetch(ragUrl("/rag/chat"), {
-          method: "POST",
-          headers: ragJsonHeaders(),
-          body: JSON.stringify({
-            message: `${prompt}\nCHỈ TRẢ VỀ JSON.`,
-            top_k: 8,
-            mode: "balanced",
-            include_prompt: false
-          })
-        });
-        let ragData = {};
-        try {
-          ragData = await ragRes.json();
-        } catch {
-          throw new Error("RAG trả về không phải JSON.");
-        }
-        if (!ragRes.ok) {
-          const detail = ragData?.detail ?? ragData?.error;
-          throw new Error(
-            typeof detail === "string" ? detail : "RAG không khả dụng hoặc từ chối yêu cầu."
-          );
-        }
-        responseText = ragData.answer ?? "";
-        if (!responseText) throw new Error("RAG trả về rỗng.");
-        console.log(`[AI] RAG fallback response received (${responseText.length} chars)`);
-      }
-
-      console.log("[AI] Raw Response Text:", responseText);
-
-      responseText = responseText.replace(/```json\n?|\n?```/g, "").trim();
-      let aiResult;
-      try {
-        aiResult = JSON.parse(responseText);
-        console.log("[AI] Parsed JSON days count:", aiResult.days?.length || 0);
-      } catch (e) {
-        console.error("AI JSON Parse Error:", e, responseText);
+      if (!genResult.ok && genResult.reason === "invalid_ai_json") {
+        console.error("AI JSON Parse Error:", genResult.error, genResult.raw);
         return res.status(500).json({ success: false, message: "AI trả về dữ liệu không hợp lệ." });
       }
+
+      const aiResult = genResult.aiResult;
+
       const isoStart = toIsoDate(startDate);
       const isoEnd = toIsoDate(endDate);
 
