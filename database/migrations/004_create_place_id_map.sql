@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS `place_id_map` (
   `old_rag_destination_id` int(11) DEFAULT NULL COMMENT 'Legacy rag_places.destination_id',
 
   `new_app_place_id` int(11) NOT NULL COMMENT 'v2 app_places.id (first cut equals old_destination_id when present); multiple legacy keys may map to the same app place',
-  `place_key` varchar(50) NOT NULL COMMENT 'Canonical key used across v2 (see locked place_key rule)',
+  `place_key` varchar(100) NOT NULL COMMENT 'Canonical key used across v2 (see locked place_key rule); sized for RAG_ALIAS_* keys',
 
   `image_folder_key` varchar(255) DEFAULT NULL COMMENT 'Optional: filesystem folder key hint (legacy inconsistencies)',
   `notes` varchar(500) DEFAULT NULL COMMENT 'Manual review notes (e.g., MANUAL_* keys, collisions, missing sources)',
