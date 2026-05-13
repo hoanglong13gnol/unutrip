@@ -3,6 +3,7 @@ import { daysBetweenInclusive, toIsoDate } from "../utils.js";
 import * as itinerariesRepository from "../repositories/itineraries.repository.js";
 import * as aiRepository from "../repositories/ai.repository.js";
 import {
+  attachDestinationImages,
   flattenSelectedOptionDays,
   itineraryRowToDto,
   resolveDestinationIdsFromSelection,
@@ -28,12 +29,18 @@ export async function getItineraryDetailForUser({ userId, itineraryId }) {
   const dayDtos = [];
   for (const d of days) {
     const items = await itinerariesRepository.listItineraryItemsWithDestinationByDayId(d.id);
+    const attachRows = items.map((row) => ({ ...row, id: row.destination_id }));
+    const attachedRows = await attachDestinationImages(attachRows);
+    const itemsWithImages = items.map((row, idx) => ({
+      ...row,
+      images_from_table: attachedRows[idx]?.images_from_table
+    }));
     dayDtos.push({
       id: d.id,
       itineraryId: d.itinerary_id,
       dayNumber: d.day_number,
       date: d.date,
-      items: items.map((i) => ({
+      items: itemsWithImages.map((i) => ({
         id: i.id,
         dayId: i.day_id,
         destinationId: i.destination_id,
