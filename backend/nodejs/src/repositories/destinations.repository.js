@@ -24,7 +24,7 @@ function buildDestinationWhere({ category, province, search }) {
 
 export async function countDestinations({ category, province, search }) {
   const { whereSql, params } = buildDestinationWhere({ category, province, search });
-  const countRow = await db.get(`SELECT COUNT(*) as cnt FROM destinations ${whereSql}`, params);
+  const countRow = await db.get(`SELECT COUNT(*) as cnt FROM app_places ${whereSql}`, params);
   return countRow?.cnt ?? 0;
 }
 
@@ -35,7 +35,7 @@ export async function listDestinations({ userId, category, province, search, lim
     `
       SELECT d.*,
         EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.destination_id = d.id) as is_favorite
-      FROM destinations d
+      FROM app_places d
       ${whereSql}
       ORDER BY d.rating DESC, d.review_count DESC, d.id DESC
       LIMIT ? OFFSET ?
@@ -49,7 +49,7 @@ export async function listFeaturedDestinations({ userId, limit = 5 }) {
     `
       SELECT d.*,
         EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.destination_id = d.id) as is_favorite
-      FROM destinations d
+      FROM app_places d
       ORDER BY d.rating DESC, d.review_count DESC
       LIMIT ?
     `,
@@ -83,7 +83,7 @@ export async function listNearbyDestinations({ userId, lat, lng, radiusKm, limit
           WHERE f.user_id = ?
             AND f.destination_id = d.id
         ) AS is_favorite
-      FROM destinations d
+      FROM app_places d
       WHERE d.latitude IS NOT NULL
         AND d.longitude IS NOT NULL
       HAVING distance_km <= ?
@@ -99,7 +99,7 @@ export async function getDestinationById({ userId, id }) {
     `
       SELECT d.*,
         EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.destination_id = d.id) as is_favorite
-      FROM destinations d
+      FROM app_places d
       WHERE d.id = ?
     `,
     [userId, id]
