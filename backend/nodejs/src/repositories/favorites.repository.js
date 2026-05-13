@@ -5,7 +5,7 @@ export async function listFavoriteDestinationsByUserId(userId) {
     `
       SELECT d.*, 1 as is_favorite
       FROM favorites f
-      JOIN destinations d ON d.id = f.destination_id
+      JOIN app_places d ON d.id = f.destination_id
       WHERE f.user_id = ?
       ORDER BY f.created_at DESC
     `,
@@ -14,7 +14,7 @@ export async function listFavoriteDestinationsByUserId(userId) {
 }
 
 export async function destinationExists(destinationId) {
-  const row = await db.get("SELECT id FROM destinations WHERE id = ?", [destinationId]);
+  const row = await db.get("SELECT id FROM app_places WHERE id = ?", [destinationId]);
   return !!row;
 }
 
