@@ -1,7 +1,7 @@
 import { db } from "../db.js";
 import { daysBetweenInclusive, toIsoDate } from "../utils.js";
 import * as itinerariesRepository from "../repositories/itineraries.repository.js";
-import * as aiRepository from "../repositories/ai.repository.js";
+import * as placeIdMapRepository from "../repositories/placeIdMap.repository.js";
 import {
   attachDestinationImages,
   flattenSelectedOptionDays,
@@ -356,10 +356,10 @@ export async function createItineraryFromAiOption({ userId, payload }) {
 
     if (!rawPlaceId) continue;
 
-    const row = await aiRepository.getDestinationIdByRagPlaceId(rawPlaceId);
+    const destinationId = await placeIdMapRepository.getDestinationIdByRagPlaceId(rawPlaceId);
 
-    if (row?.destination_id) {
-      destinationIdByRawPlaceId.set(String(rawPlaceId), Number(row.destination_id));
+    if (destinationId) {
+      destinationIdByRawPlaceId.set(String(rawPlaceId), Number(destinationId));
     }
   }
 
