@@ -1,10 +1,6 @@
 import { authMiddleware } from "../auth.js";
-import * as destinationsRepository from "../repositories/destinations.repository.js";
-import {
-  attachDestinationImages,
-  normalizeCategoryParam,
-  toDestinationDto
-} from "./helpers.js";
+import { normalizeCategoryParam } from "./helpers.js";
+import * as destinationsService from "../services/destinations.service.js";
 
 export function registerDestinationRoutes(router) {
   router.get("/destinations", authMiddleware, async (req, res) => {
@@ -17,8 +13,7 @@ export function registerDestinationRoutes(router) {
     const province = (req.query.province ?? "").toString().trim() || null;
     const search = (req.query.search ?? "").toString().trim() || null;
 
-    const total = await destinationsRepository.countDestinations({ category, province, search });
-    const rows = await destinationsRepository.listDestinations({
+    const { total, data } = await destinationsService.listDestinationsPage({
       userId: req.user.userId,
       category,
       province,
@@ -26,16 +21,14 @@ export function registerDestinationRoutes(router) {
       limit,
       offset
     });
-
-    const rowsWithImages = await attachDestinationImages(rows);
-    const data = rowsWithImages.map((r) => toDestinationDto(r, !!r.is_favorite));
     return res.json({ success: true, data, total, page, limit });
   });
 
   router.get("/destinations/featured", authMiddleware, async (req, res) => {
-    const rows = await destinationsRepository.listFeaturedDestinations({ userId: req.user.userId, limit: 5 });
-    const rowsWithImages = await attachDestinationImages(rows);
-    const data = rowsWithImages.map((r) => toDestinationDto(r, !!r.is_favorite));
+    const data = await destinationsService.listFeaturedDestinationsForUser({
+      userId: req.user.userId,
+      limit: 5
+    });
     return res.json({ success: true, data, total: data.length, page: 1, limit: data.length });
   });
 
@@ -54,35 +47,13 @@ export function registerDestinationRoutes(router) {
         });
       }
 
-      const rows = await destinationsRepository.listNearbyDestinations({
+      const data = await destinationsService.listNearbyDestinationsForUser({
         userId: req.user.userId,
         lat,
         lng,
         radiusKm,
         limit
       });
-
-      console.log("[NEARBY]", {
-        lat,
-        lng,
-        radiusKm,
-        limit,
-        count: rows.length,
-        first: rows.slice(0, 5).map((r) => ({
-          id: r.id,
-          name: r.name,
-          province: r.province,
-          latitude: r.latitude,
-          longitude: r.longitude,
-          distance_km: Number(r.distance_km).toFixed(2)
-        }))
-      });
-
-      const rowsWithImages = await attachDestinationImages(rows);
-      const data = rowsWithImages.map((r) => ({
-        ...toDestinationDto(r, !!r.is_favorite),
-        distanceKm: Number(r.distance_km ?? 0)
-      }));
 
       return res.json({
         success: true,
@@ -105,13 +76,12 @@ export function registerDestinationRoutes(router) {
 
   router.get("/destinations/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
-    const row = await destinationsRepository.getDestinationById({ userId: req.user.userId, id });
+    const result = await destinationsService.getDestinationDetail({ userId: req.user.userId, id });
 
-    if (!row) return res.status(404).json({ success: false, message: "Not found", data: null });
-    const [rowWithImages] = await attachDestinationImages([row]);
+    if (!result.ok) return res.status(404).json({ success: false, message: "Not found", data: null });
     return res.json({
       success: true,
-      data: toDestinationDto(rowWithImages, !!row.is_favorite)
+      data: result.data
     });
   });
 }
