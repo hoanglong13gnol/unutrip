@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { apiOk, daysBetweenInclusive, toIsoDate } from "../utils.js";
 import { authMiddleware } from "../auth.js";
+import * as itinerariesRepository from "../repositories/itineraries.repository.js";
 import {
   itineraryRowToDto,
   toDestinationDto
@@ -9,15 +10,7 @@ import {
 
 export function registerItineraryRoutes(router) {
   router.get("/itineraries", authMiddleware, async (req, res) => {
-    const rows = await db.query(
-      `
-      SELECT *
-      FROM itineraries
-      WHERE user_id = ?
-      ORDER BY created_at DESC, id DESC
-    `,
-      [req.user.userId]
-    );
+    const rows = await itinerariesRepository.listItinerariesByUserId(req.user.userId);
 
     const data = rows.map((r) => itineraryRowToDto(r, null));
     return res.json({ success: true, data });
@@ -25,27 +18,13 @@ export function registerItineraryRoutes(router) {
 
   router.get("/itineraries/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
-    const it = await db.get("SELECT * FROM itineraries WHERE id = ? AND user_id = ?", [
-      id,
-      req.user.userId
-    ]);
+    const it = await itinerariesRepository.getItineraryByIdForUser({ itineraryId: id, userId: req.user.userId });
     if (!it) return res.status(404).json({ success: false, message: "Not found", data: null });
 
-    const days = await db.query("SELECT * FROM itinerary_days WHERE itinerary_id = ? ORDER BY day_number ASC", [
-      id
-    ]);
+    const days = await itinerariesRepository.listItineraryDaysByItineraryId(id);
     const dayDtos = [];
     for (const d of days) {
-      const items = await db.query(
-        `
-        SELECT ii.*, d2.*
-        FROM itinerary_items ii
-        JOIN destinations d2 ON d2.id = ii.destination_id
-        WHERE ii.day_id = ?
-        ORDER BY ii.order_index ASC
-      `,
-        [d.id]
-      );
+      const items = await itinerariesRepository.listItineraryItemsWithDestinationByDayId(d.id);
       dayDtos.push({
         id: d.id,
         itineraryId: d.itinerary_id,
@@ -84,21 +63,15 @@ export function registerItineraryRoutes(router) {
     const estimatedBudget = parsed.data.estimatedBudget ?? parsed.data.budget ?? null;
     const totalDays = daysBetweenInclusive(startDate, endDate);
 
-    const info = await db.run(
-      `
-        INSERT INTO itineraries (user_id, title, description, start_date, end_date, total_days, status, estimated_budget)
-        VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)
-      `,
-      [
-        req.user.userId,
-        title,
-        description ?? null,
-        toIsoDate(startDate),
-        toIsoDate(endDate),
-        totalDays,
-        estimatedBudget
-      ]
-    );
+    const info = await itinerariesRepository.insertItinerary({
+      userId: req.user.userId,
+      title,
+      description,
+      startDate: toIsoDate(startDate),
+      endDate: toIsoDate(endDate),
+      totalDays,
+      estimatedBudget
+    });
 
     const itineraryId = Number(info.lastInsertRowid);
     const destIds = Array.isArray(destinationIds) ? destinationIds : [];
@@ -106,26 +79,27 @@ export function registerItineraryRoutes(router) {
     for (let d = 0; d < totalDays; d++) {
       const date = new Date(toIsoDate(startDate));
       date.setDate(date.getDate() + d);
-      const dayInfo = await db.run("INSERT INTO itinerary_days (itinerary_id, day_number, date) VALUES (?, ?, ?)", [
+      const dayInfo = await itinerariesRepository.insertItineraryDay({
         itineraryId,
-        d + 1,
-        toIsoDate(date)
-      ]);
+        dayNumber: d + 1,
+        date: toIsoDate(date)
+      });
       const dayId = Number(dayInfo.lastInsertRowid);
 
       const chunk = destIds.slice(d * 2, d * 2 + 2);
       for (const [idx, destId] of chunk.entries()) {
-        await db.run(
-          `
-          INSERT INTO itinerary_items (day_id, destination_id, start_time, end_time, note, order_index)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `,
-          [dayId, destId, idx === 0 ? "09:00" : "14:00", idx === 0 ? "12:00" : "17:00", null, idx]
-        );
+        await itinerariesRepository.insertItineraryItem({
+          dayId,
+          destinationId: destId,
+          startTime: idx === 0 ? "09:00" : "14:00",
+          endTime: idx === 0 ? "12:00" : "17:00",
+          note: null,
+          orderIndex: idx
+        });
       }
     }
 
-    const it = await db.get("SELECT * FROM itineraries WHERE id = ?", [itineraryId]);
+    const it = await itinerariesRepository.getItineraryById(itineraryId);
     return res.json(apiOk(itineraryRowToDto(it, null), "OK"));
   });
 
@@ -138,34 +112,30 @@ export function registerItineraryRoutes(router) {
         return res.status(400).json({ success: false, message: "Missing destinationId" });
       }
 
-      const it = await db.get("SELECT id FROM itineraries WHERE id = ? AND user_id = ?", [
+      const it = await itinerariesRepository.getItineraryByIdForUser({
         itineraryId,
-        req.user.userId
-      ]);
+        userId: req.user.userId
+      });
       if (!it) return res.status(403).json({ success: false, message: "Not authorized or not found" });
 
       let targetDayId = dayId;
       if (!targetDayId) {
-        const firstDay = await db.get(
-          "SELECT id FROM itinerary_days WHERE itinerary_id = ? ORDER BY day_number ASC LIMIT 1",
-          [itineraryId]
-        );
-        if (!firstDay) return res.status(400).json({ success: false, message: "No days in itinerary" });
-        targetDayId = firstDay.id;
+        const firstDayId = await itinerariesRepository.getFirstItineraryDayId(itineraryId);
+        if (!firstDayId) return res.status(400).json({ success: false, message: "No days in itinerary" });
+        targetDayId = firstDayId;
       }
 
-      const maxRow = await db.get("SELECT MAX(order_index) as max_idx FROM itinerary_items WHERE day_id = ?", [
-        targetDayId
-      ]);
-      const nextIdx = (maxRow?.max_idx ?? -1) + 1;
+      const maxIdx = await itinerariesRepository.getMaxOrderIndexByDayId(targetDayId);
+      const nextIdx = (maxIdx ?? -1) + 1;
 
-      await db.run(
-        `
-        INSERT INTO itinerary_items (day_id, destination_id, order_index, start_time, end_time, note)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-        [targetDayId, destinationId, nextIdx, startTime || "09:00", endTime || "10:00", note || ""]
-      );
+      await itinerariesRepository.insertItineraryItem({
+        dayId: targetDayId,
+        destinationId,
+        orderIndex: nextIdx,
+        startTime: startTime || "09:00",
+        endTime: endTime || "10:00",
+        note: note || ""
+      });
 
       return res.json({ success: true, message: "Đã thêm vào lịch trình" });
     } catch (e) {
@@ -176,7 +146,7 @@ export function registerItineraryRoutes(router) {
 
   router.put("/itineraries/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
-    const it = await db.get("SELECT * FROM itineraries WHERE id = ? AND user_id = ?", [id, req.user.userId]);
+    const it = await itinerariesRepository.getItineraryByIdForUser({ itineraryId: id, userId: req.user.userId });
     if (!it) return res.status(404).json({ success: false, message: "Not found", data: null });
 
     const schema = z.object({
@@ -195,32 +165,25 @@ export function registerItineraryRoutes(router) {
     if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid payload", data: null });
 
     const totalDays = daysBetweenInclusive(parsed.data.startDate, parsed.data.endDate);
-    await db.run(
-      `
-      UPDATE itineraries
-      SET title = ?, description = ?, start_date = ?, end_date = ?, total_days = ?, status = COALESCE(?, status), estimated_budget = ?
-      WHERE id = ? AND user_id = ?
-    `,
-      [
-        parsed.data.title,
-        parsed.data.description ?? null,
-        toIsoDate(parsed.data.startDate),
-        toIsoDate(parsed.data.endDate),
-        totalDays,
-        parsed.data.status ?? null,
-        parsed.data.estimatedBudget ?? null,
-        id,
-        req.user.userId
-      ]
-    );
+    await itinerariesRepository.updateItineraryByIdForUser({
+      itineraryId: id,
+      userId: req.user.userId,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      startDate: toIsoDate(parsed.data.startDate),
+      endDate: toIsoDate(parsed.data.endDate),
+      totalDays,
+      status: parsed.data.status,
+      estimatedBudget: parsed.data.estimatedBudget ?? null
+    });
 
-    const updated = await db.get("SELECT * FROM itineraries WHERE id = ?", [id]);
+    const updated = await itinerariesRepository.getItineraryById(id);
     return res.json(apiOk(itineraryRowToDto(updated, null), "OK"));
   });
 
   router.delete("/itineraries/:id", authMiddleware, async (req, res) => {
     const id = Number(req.params.id);
-    await db.run("DELETE FROM itineraries WHERE id = ? AND user_id = ?", [id, req.user.userId]);
+    await itinerariesRepository.deleteItineraryByIdForUser({ itineraryId: id, userId: req.user.userId });
     return res.json(apiOk(null, "OK"));
   });
 
@@ -240,22 +203,19 @@ export function registerItineraryRoutes(router) {
       try {
         await conn.beginTransaction();
 
-        const [itinRes] = await conn.execute(
-          `
-          INSERT INTO itineraries (user_id, title, description, start_date, end_date, total_days, status, estimated_budget)
-          VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)
-        `,
-          [
-            req.user.userId,
-            title || "Lịch trình AI",
-            description || "Đã lưu từ gợi ý AI.",
-            isoStart,
-            isoEnd,
+        const itinRes = await itinerariesRepository.insertItinerary(
+          {
+            userId: req.user.userId,
+            title: title || "Lịch trình AI",
+            description: description || "Đã lưu từ gợi ý AI.",
+            startDate: isoStart,
+            endDate: isoEnd,
             totalDays,
-            budget || null
-          ]
+            estimatedBudget: budget || null
+          },
+          conn
         );
-        const itineraryId = itinRes.insertId;
+        const itineraryId = itinRes.lastInsertRowid;
 
         if (days && Array.isArray(days)) {
           for (const day of days) {
@@ -263,31 +223,29 @@ export function registerItineraryRoutes(router) {
             d.setDate(d.getDate() + ((day.dayNumber || 1) - 1));
             const dayDateStr = d.toISOString().split("T")[0];
 
-            const [dayRes] = await conn.execute(
-              `
-              INSERT INTO itinerary_days (itinerary_id, day_number, date)
-              VALUES (?, ?, ?)
-            `,
-              [itineraryId, day.dayNumber || 1, dayDateStr]
+            const dayRes = await itinerariesRepository.insertItineraryDay(
+              {
+                itineraryId,
+                dayNumber: day.dayNumber || 1,
+                date: dayDateStr
+              },
+              conn
             );
-            const dayId = dayRes.insertId;
+            const dayId = dayRes.lastInsertRowid;
 
             let orderIdx = 0;
             if (day.items && Array.isArray(day.items)) {
               for (const item of day.items) {
-                await conn.execute(
-                  `
-                  INSERT INTO itinerary_items (day_id, destination_id, order_index, start_time, end_time, note)
-                  VALUES (?, ?, ?, ?, ?, ?)
-                `,
-                  [
+                await itinerariesRepository.insertItineraryItem(
+                  {
                     dayId,
-                    item.destinationId,
-                    orderIdx++,
-                    item.startTime || "08:00",
-                    item.endTime || "09:00",
-                    item.note || ""
-                  ]
+                    destinationId: item.destinationId,
+                    orderIndex: orderIdx++,
+                    startTime: item.startTime || "08:00",
+                    endTime: item.endTime || "09:00",
+                    note: item.note || ""
+                  },
+                  conn
                 );
               }
             }
