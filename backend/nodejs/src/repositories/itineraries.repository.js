@@ -38,7 +38,7 @@ export async function listItineraryItemsWithDestinationByDayId(dayId) {
     `
       SELECT ii.*, d2.*
       FROM itinerary_items ii
-      JOIN destinations d2 ON d2.id = ii.destination_id
+      JOIN app_places d2 ON d2.id = ii.destination_id
       WHERE ii.day_id = ?
       ORDER BY ii.order_index ASC
     `,
