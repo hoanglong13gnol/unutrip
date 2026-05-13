@@ -6,6 +6,8 @@ import { ragJsonHeaders, ragUrl } from "../config/ragClient.js";
 import {
   requestItineraryOptions,
   requestItineraryPreview,
+  requestLocalAiChatAnswer,
+  requestRagChatFallbackForAiChat,
   requestRagChatSimple
 } from "../services/ai.service.js";
 import * as aiRepository from "../repositories/ai.repository.js";
@@ -259,43 +261,25 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
       const aiUrl = process.env.AI_MODEL_URL || "http://localhost:8000/chat";
 
       try {
-        const aiRes = await fetch(aiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message })
-        });
-        const data = await aiRes.json();
-        return res.json({ success: true, answer: data.answer });
+        const { answer } = await requestLocalAiChatAnswer({ aiUrl, message });
+        return res.json({ success: true, answer });
       } catch (err) {
         console.warn("Local AI failed, fallback to RAG:", err.message);
-        const ragRes = await fetch(ragUrl("/rag/chat/simple"), {
-          method: "POST",
-          headers: ragJsonHeaders(),
-          body: JSON.stringify({
-            message,
-            top_k: 6,
-            mode: "balanced"
-          })
-        });
-        let ragData = {};
-        try {
-          ragData = await ragRes.json();
-        } catch {
+        const result = await requestRagChatFallbackForAiChat({ message });
+
+        if (!result.ok && result.reason === "invalid_json") {
           return res.status(502).json({
             success: false,
             message: "RAG trả về không hợp lệ"
           });
         }
-        if (!ragRes.ok) {
+        if (!result.ok && result.reason === "upstream") {
           return res.status(502).json({
             success: false,
-            message:
-              typeof ragData?.detail === "string"
-                ? ragData.detail
-                : "AI / RAG không khả dụng"
+            message: result.message
           });
         }
-        return res.json({ success: true, answer: ragData.answer ?? "" });
+        return res.json({ success: true, answer: result.answer });
       }
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });

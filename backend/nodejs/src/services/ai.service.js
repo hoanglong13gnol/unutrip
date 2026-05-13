@@ -73,3 +73,59 @@ export async function requestRagChatSimple(payload) {
 
   return { ragOk: ragResponse.ok, data };
 }
+
+/**
+ * Local AI chat for /ai/chat. Does not check HTTP ok. Throws on fetch/json failure.
+ * @param {{ aiUrl: string, message: string }} params
+ * @returns {Promise<{ answer: unknown }>}
+ */
+export async function requestLocalAiChatAnswer({ aiUrl, message }) {
+  const aiRes = await fetch(aiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message })
+  });
+  const data = await aiRes.json();
+  return { answer: data.answer };
+}
+
+/**
+ * RAG fallback for /ai/chat only: json() parse (not text+parse). Fetch errors propagate.
+ * @param {{ message: string }} params
+ * @returns {Promise<
+ *   | { ok: true, answer: string }
+ *   | { ok: false, reason: "invalid_json" }
+ *   | { ok: false, reason: "upstream", message: string }
+ * >}
+ */
+export async function requestRagChatFallbackForAiChat({ message }) {
+  const ragRes = await fetch(ragUrl("/rag/chat/simple"), {
+    method: "POST",
+    headers: ragJsonHeaders(),
+    body: JSON.stringify({
+      message,
+      top_k: 6,
+      mode: "balanced"
+    })
+  });
+
+  let ragData = {};
+  try {
+    ragData = await ragRes.json();
+  } catch {
+    return { ok: false, reason: "invalid_json" };
+  }
+
+  if (!ragRes.ok) {
+    return {
+      ok: false,
+      reason: "upstream",
+      message:
+        typeof ragData?.detail === "string"
+          ? ragData.detail
+          : "AI / RAG không khả dụng"
+    };
+  }
+
+  return { ok: true, answer: ragData.answer ?? "" };
+}
