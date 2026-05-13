@@ -6,10 +6,10 @@ export async function listActiveByDestinationIds(destinationIds) {
   const placeholders = destinationIds.map(() => "?").join(",");
 
   const rows = await db.query(
-    `SELECT destination_id, image_url
-     FROM destination_images
+    `SELECT app_place_id AS destination_id, image_url
+     FROM place_images
      WHERE status = 'active'
-       AND destination_id IN (${placeholders})
+       AND app_place_id IN (${placeholders})
      ORDER BY is_primary DESC, id ASC`,
     destinationIds
   );
