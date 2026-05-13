@@ -48,3 +48,28 @@ export async function requestItineraryOptions(payload) {
 
   return { ok: true, data };
 }
+
+/**
+ * Proxies simple RAG chat. Caller supplies coerced body fields. Does not send HTTP responses.
+ * Network errors propagate to the route catch.
+ * @param {{ message: string, top_k: number, mode: string, targetProvince: string | null, targetCity: string | null }} payload
+ * @returns {Promise<{ ragOk: boolean, data: object | null }>}
+ */
+export async function requestRagChatSimple(payload) {
+  const ragResponse = await fetch(ragUrl("/rag/chat/simple"), {
+    method: "POST",
+    headers: ragJsonHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  const text = await ragResponse.text();
+
+  let data;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  return { ragOk: ragResponse.ok, data };
+}

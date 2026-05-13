@@ -3,7 +3,11 @@ import { db } from "../db.js";
 import { authMiddleware } from "../auth.js";
 import { parseJsonArray, daysBetweenInclusive, toIsoDate } from "../utils.js";
 import { ragJsonHeaders, ragUrl } from "../config/ragClient.js";
-import { requestItineraryOptions, requestItineraryPreview } from "../services/ai.service.js";
+import {
+  requestItineraryOptions,
+  requestItineraryPreview,
+  requestRagChatSimple
+} from "../services/ai.service.js";
 import * as aiRepository from "../repositories/ai.repository.js";
 import {
   flattenSelectedOptionDays,
@@ -210,28 +214,15 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
         });
       }
 
-      const ragResponse = await fetch(ragUrl("/rag/chat/simple"), {
-        method: "POST",
-        headers: ragJsonHeaders(),
-        body: JSON.stringify({
-          message,
-          top_k: topK,
-          mode,
-          targetProvince,
-          targetCity
-        })
+      const { ragOk, data } = await requestRagChatSimple({
+        message,
+        top_k: topK,
+        mode,
+        targetProvince,
+        targetCity
       });
 
-      const text = await ragResponse.text();
-
-      let data;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = { raw: text };
-      }
-
-      if (!ragResponse.ok) {
+      if (!ragOk) {
         return res.status(502).json({
           success: false,
           message: "FastAPI RAG trả lỗi",
