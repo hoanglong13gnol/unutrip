@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { db } from "../db.js";
 import { apiOk } from "../utils.js";
 import { authMiddleware } from "../auth.js";
 import { upload } from "./upload.js";
 import { getUserById, toUserDto, firstArrayValue } from "./helpers.js";
+import * as usersRepository from "../repositories/users.repository.js";
 
 export function registerUserRoutes(router) {
   router.get("/users/profile", authMiddleware, async (req, res) => {
@@ -17,15 +17,9 @@ export function registerUserRoutes(router) {
 
   router.get("/users/stats", authMiddleware, async (req, res) => {
     try {
-      const itineraries = await db.get("SELECT COUNT(*) as count FROM itineraries WHERE user_id = ?", [
-        req.user.userId
-      ]);
-      const favorites = await db.get("SELECT COUNT(*) as count FROM favorites WHERE user_id = ?", [
-        req.user.userId
-      ]);
-      const reviews = await db.get("SELECT COUNT(*) as count FROM reviews WHERE user_id = ?", [
-        req.user.userId
-      ]);
+      const itineraries = await usersRepository.countItinerariesByUserId(req.user.userId);
+      const favorites = await usersRepository.countFavoritesByUserId(req.user.userId);
+      const reviews = await usersRepository.countReviewsByUserId(req.user.userId);
 
       return res.json(
         apiOk(
@@ -55,23 +49,17 @@ export function registerUserRoutes(router) {
     if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid payload" });
 
     const { fullName, email, phone, avatar, preferences } = parsed.data;
-    const existing = await db.get("SELECT id FROM users WHERE email = ? AND id != ?", [
-      email,
-      req.user.userId
-    ]);
+    const existing = await usersRepository.getUserIdByEmailExcludingUser({ email, userId: req.user.userId });
     if (existing) return res.status(400).json({ success: false, message: "Email đã được dùng" });
 
-    await db.run(
-      "UPDATE users SET full_name = ?, email = ?, phone = ?, avatar = ?, preferences_json = COALESCE(?, preferences_json) WHERE id = ?",
-      [
-        fullName,
-        email,
-        phone ?? null,
-        avatar ?? null,
-        preferences ? JSON.stringify(preferences) : null,
-        req.user.userId
-      ]
-    );
+    await usersRepository.updateUserProfile({
+      userId: req.user.userId,
+      fullName,
+      email,
+      phone: phone ?? null,
+      avatar: avatar ?? null,
+      preferencesJsonOrNull: preferences ? JSON.stringify(preferences) : null
+    });
 
     const user = await getUserById(req.user.userId);
     return res.json(apiOk(toUserDto(user), "Cập nhật thành công"));
@@ -86,10 +74,10 @@ export function registerUserRoutes(router) {
         : firstArrayValue(body);
 
     if (!Array.isArray(prefs)) return res.status(400).json({ success: false, message: "Invalid payload" });
-    await db.run("UPDATE users SET preferences_json = ? WHERE id = ?", [
-      JSON.stringify(prefs),
-      req.user.userId
-    ]);
+    await usersRepository.updateUserPreferences({
+      userId: req.user.userId,
+      preferencesJson: JSON.stringify(prefs)
+    });
     const user = await getUserById(req.user.userId);
     return res.json(apiOk(toUserDto(user), "OK"));
   });
@@ -97,7 +85,7 @@ export function registerUserRoutes(router) {
   router.post("/users/avatar", authMiddleware, upload.single("avatar"), async (req, res) => {
     if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
     const avatarUrl = `/uploads/avatars/${req.file.filename}`;
-    await db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatarUrl, req.user.userId]);
+    await usersRepository.updateUserAvatar({ userId: req.user.userId, avatarUrl });
     const user = await getUserById(req.user.userId);
     return res.json(apiOk(toUserDto(user), "Cập nhật ảnh đại diện thành công"));
   });
