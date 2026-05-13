@@ -1,23 +1,13 @@
-import { db } from "../db.js";
 import { apiOk, parseJsonArray } from "../utils.js";
 import { authMiddleware } from "../auth.js";
 import { upload } from "./upload.js";
 import { getUserById } from "./helpers.js";
+import * as reviewsRepository from "../repositories/reviews.repository.js";
 
 export function registerReviewRoutes(router) {
   router.get("/destinations/:id/reviews", authMiddleware, async (req, res) => {
     const destinationId = Number(req.params.id);
-    const rows = await db.query(
-      `
-      SELECT r.id, r.user_id, u.full_name as user_name, u.avatar as user_avatar,
-             r.destination_id, r.rating, r.comment, r.images_json, r.created_at
-      FROM reviews r
-      JOIN users u ON u.id = r.user_id
-      WHERE r.destination_id = ?
-      ORDER BY r.created_at DESC, r.id DESC
-    `,
-      [destinationId]
-    );
+    const rows = await reviewsRepository.listReviewsByDestinationId(destinationId);
 
     const data = rows.map((r) => ({
       id: r.id,
@@ -44,25 +34,27 @@ export function registerReviewRoutes(router) {
         return res.status(400).json({ success: false, message: "Invalid payload", data: null });
       }
 
-      const dest = await db.get("SELECT id FROM destinations WHERE id = ?", [destinationId]);
-      if (!dest) return res.status(404).json({ success: false, message: "Destination not found", data: null });
+      const destExists = await reviewsRepository.destinationExists(destinationId);
+      if (!destExists)
+        return res.status(404).json({ success: false, message: "Destination not found", data: null });
 
       const imageUrls = (req.files || []).map((f) => `/uploads/reviews/${f.filename}`);
       const imagesJson = imageUrls.length > 0 ? JSON.stringify(imageUrls) : null;
 
-      const info = await db.run(
-        "INSERT INTO reviews (user_id, destination_id, rating, comment, images_json) VALUES (?, ?, ?, ?, ?)",
-        [req.user.userId, destinationId, rating, comment, imagesJson]
-      );
+      const info = await reviewsRepository.insertReview({
+        userId: req.user.userId,
+        destinationId,
+        rating,
+        comment,
+        imagesJson
+      });
 
-      const agg = await db.get("SELECT AVG(rating) as avg, COUNT(*) as cnt FROM reviews WHERE destination_id = ?", [
-        destinationId
-      ]);
-      await db.run("UPDATE destinations SET rating = ?, review_count = ? WHERE id = ?", [
-        Number(agg.avg ?? 0),
-        Number(agg.cnt ?? 0),
-        destinationId
-      ]);
+      const agg = await reviewsRepository.getReviewAggregateByDestinationId(destinationId);
+      await reviewsRepository.updateDestinationReviewAggregate({
+        destinationId,
+        rating: Number(agg.avg ?? 0),
+        reviewCount: Number(agg.cnt ?? 0)
+      });
 
       const user = await getUserById(req.user.userId);
       const review = {
