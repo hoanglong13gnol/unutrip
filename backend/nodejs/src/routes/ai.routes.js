@@ -3,6 +3,7 @@ import { db } from "../db.js";
 import { authMiddleware } from "../auth.js";
 import { parseJsonArray, daysBetweenInclusive, toIsoDate } from "../utils.js";
 import { ragJsonHeaders, ragUrl } from "../config/ragClient.js";
+import { requestItineraryOptions, requestItineraryPreview } from "../services/ai.service.js";
 import * as aiRepository from "../repositories/ai.repository.js";
 import {
   flattenSelectedOptionDays,
@@ -314,23 +315,18 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
     try {
       const { title, description, startDate, endDate, budget, preferences, province } = req.body;
 
-      const ragResult = await fetch(ragUrl("/ai/itinerary-preview"), {
-        method: "POST",
-        headers: ragJsonHeaders(),
-        body: JSON.stringify({
-          title,
-          description,
-          startDate,
-          endDate,
-          budget,
-          preferences,
-          province
-        })
+      const result = await requestItineraryPreview({
+        title,
+        description,
+        startDate,
+        endDate,
+        budget,
+        preferences,
+        province
       });
 
-      const data = await ragResult.json();
-
-      if (!ragResult.ok || data.success === false) {
+      if (!result.ok) {
+        const { data } = result;
         return res.status(502).json({
           success: false,
           message: data.message || "AI service không trả được gợi ý",
@@ -338,7 +334,7 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
         });
       }
 
-      return res.json(data);
+      return res.json(result.data);
     } catch (error) {
       console.error("[AI_PREVIEW_ERROR]", error);
       return res.status(500).json({
@@ -360,30 +356,18 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
         });
       }
 
-      const ragResult = await fetch(ragUrl("/ai/itinerary-options"), {
-        method: "POST",
-        headers: ragJsonHeaders(),
-        body: JSON.stringify({
-          title,
-          description,
-          startDate,
-          endDate,
-          budget,
-          preferences: Array.isArray(preferences) ? preferences : [],
-          province
-        })
+      const result = await requestItineraryOptions({
+        title,
+        description,
+        startDate,
+        endDate,
+        budget,
+        preferences: Array.isArray(preferences) ? preferences : [],
+        province
       });
 
-      const text = await ragResult.text();
-
-      let data;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = { raw: text };
-      }
-
-      if (!ragResult.ok || data?.success === false) {
+      if (!result.ok) {
+        const { data } = result;
         return res.status(502).json({
           success: false,
           message: data?.message || "AI service không trả được phương án tour",
@@ -392,7 +376,7 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
         });
       }
 
-      return res.json(data);
+      return res.json(result.data);
     } catch (error) {
       console.error("[AI_ITINERARY_OPTIONS_ERROR]", error);
 
