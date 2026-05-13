@@ -1,5 +1,8 @@
 import { db } from "../db.js";
 import { parseJsonArray } from "../utils.js";
+import * as ragPlacesRepository from "../repositories/ragPlaces.repository.js";
+import * as destinationImagesRepository from "../repositories/destinationImages.repository.js";
+import * as usersRepository from "../repositories/users.repository.js";
 
 export function flattenSelectedOptionDays(days) {
   const selectedDestinations = [];
@@ -50,17 +53,9 @@ export async function resolveDestinationIdsFromSelection(selectedDestinations) {
       continue;
     }
 
-    const row = await db.get(
-      `
-      SELECT destination_id
-      FROM rag_places
-      WHERE place_id = ?
-      LIMIT 1
-      `,
-      [rawPlaceId]
-    );
+    const destinationId = await ragPlacesRepository.getDestinationIdByPlaceId(rawPlaceId);
 
-    if (!row || !row.destination_id) {
+    if (!destinationId) {
       unresolved.push({
         rawPlaceId,
         reason: "not found in rag_places or destination_id is null"
@@ -68,7 +63,7 @@ export async function resolveDestinationIdsFromSelection(selectedDestinations) {
       continue;
     }
 
-    resolvedIds.push(Number(row.destination_id));
+    resolvedIds.push(Number(destinationId));
   }
 
   return {
@@ -153,15 +148,7 @@ export async function attachDestinationImages(rows) {
   const ids = [...new Set(rows.map((r) => Number(r.id)).filter(Number.isFinite))];
   if (ids.length === 0) return rows;
 
-  const placeholders = ids.map(() => "?").join(",");
-  const imageRows = await db.query(
-    `SELECT destination_id, image_url
-     FROM destination_images
-     WHERE status = 'active'
-       AND destination_id IN (${placeholders})
-     ORDER BY is_primary DESC, id ASC`,
-    ids
-  );
+  const imageRows = await destinationImagesRepository.listActiveByDestinationIds(ids);
 
   const byDestination = new Map();
   for (const image of imageRows) {
@@ -262,10 +249,7 @@ export function itineraryRowToDto(row, days) {
 }
 
 export async function getUserById(id) {
-  const user = await db.get(
-    "SELECT id, full_name, email, phone, avatar, preferences_json, created_at FROM users WHERE id = ?",
-    [id]
-  );
+  const user = await usersRepository.getUserById(id);
   if (!user) throw new Error("User not found");
   return user;
 }
