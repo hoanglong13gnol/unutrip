@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/homeFragment"
+        android:icon="@drawable/ic_nav_home"
+        android:title="Trang chủ" />
+
+    <item
+        android:id="@+id/destinationListFragment"
+        android:icon="@drawable/ic_nav_explore"
+        android:title="Khám phá" />
+
+    <item
+        android:id="@+id/itineraryFragment"
+        android:icon="@drawable/ic_nav_itinerary"
+        android:title="Lịch trình" />
+
+    <item
+        android:id="@+id/chatbotFragment"
+        android:icon="@drawable/ic_nav_chat"
+        android:title="Trợ lý AI" />
+
+    <item
+        android:id="@+id/profileFragment"
+        android:icon="@drawable/ic_nav_profile"
+        android:title="Cá nhân" />
+
+</menu>

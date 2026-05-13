@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">UNU Trip</string>
+    <string name="app_tagline">Du lịch dễ thương cùng Trợ lý Mèo</string>
+
+    <!-- Auth -->
+    <string name="login">Đăng nhập</string>
+    <string name="register">Đăng ký</string>
+    <string name="email_hint">Email của bạn</string>
+    <string name="password_hint">Mật khẩu</string>
+    <string name="full_name_hint">Họ và tên</string>
+    <string name="phone_hint">Số điện thoại (tùy chọn)</string>
+    <string name="no_account">Chưa có tài khoản? <b>Đăng ký</b></string>
+    <string name="has_account">Đã có tài khoản? <b>Đăng nhập</b></string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Trang chủ</string>
+    <string name="nav_explore">Khám phá</string>
+    <string name="nav_itinerary">Lịch trình</string>
+    <string name="nav_chat">Trợ lý</string>
+    <string name="nav_profile">Cá nhân</string>
+
+    <!-- Home -->
+    <string name="featured_destinations">Địa điểm nổi bật</string>
+    <string name="nearby_destinations">Gần bạn</string>
+    <string name="view_all">Xem tất cả</string>
+    <string name="search_placeholder">Tìm tên địa điểm, thành phố…</string>
+
+    <!-- Categories -->
+    <string name="cat_beach">🏖️ Biển</string>
+    <string name="cat_mountain">⛰️ Núi</string>
+    <string name="cat_city">🏙️ Thành phố</string>
+    <string name="cat_heritage">🏛️ Di tích</string>
+    <string name="cat_nature">🌿 Thiên nhiên</string>
+    <string name="cat_historical">🏛️ Lịch sử</string>
+    <string name="cat_checkin">📸 Check-in</string>
+    <string name="cat_food">🍜 Ẩm thực</string>
+    <string name="cat_culture">🎨 Văn hóa</string>
+    <string name="cat_religious">🛕 Tôn giáo</string>
+    <string name="cat_entertainment">🎡 Vui chơi</string>
+
+    <!-- Destination Detail -->
+    <string name="entry_fee">Vé vào cửa</string>
+    <string name="open_hours">Giờ mở cửa</string>
+    <string name="free">Miễn phí</string>
+    <string name="reviews">Đánh giá</string>
+    <string name="add_to_itinerary">+ Thêm vào lịch trình</string>
+    <string name="add_review">Viết đánh giá</string>
+    <string name="view_on_map">Xem trên bản đồ</string>
+
+    <!-- Itinerary -->
+    <string name="my_itineraries">Lịch trình của tôi</string>
+    <string name="create_itinerary">Tạo lịch trình</string>
+    <string name="ai_suggest">✨ Gợi ý bằng AI</string>
+    <string name="itinerary_empty">Bạn chưa có lịch trình nào\nHãy tạo chuyến đi đầu tiên!</string>
+
+    <!-- Chatbot -->
+    <string name="chat_title">Trợ lý Du lịch AI</string>
+    <string name="chat_subtitle">Hỗ trợ bởi UnuTrip RAG AI</string>
+    <string name="chat_hint">Hỏi về địa điểm, lịch trình...</string>
+    <string name="chat_typing">Đang soạn tin…</string>
+
+    <!-- Profile -->
+    <string name="my_profile">Hồ sơ của tôi</string>
+    <string name="my_favorites">Địa điểm yêu thích</string>
+    <string name="settings">Cài đặt</string>
+    <string name="logout">Đăng xuất</string>
+
+    <!-- Misc -->
+    <string name="loading">Đang tải…</string>
+    <string name="error_network">Lỗi kết nối. Vui lòng thử lại.</string>
+    <string name="days_format">%d ngày</string>
+    <string name="rating_format">%.1f ⭐</string>
+</resources>

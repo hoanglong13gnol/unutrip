@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/homeFragment">
+
+    <!-- Home -->
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.smarttravel.ui.home.HomeFragment"
+        android:label="Trang chủ">
+
+        <action
+            android:id="@+id/action_homeFragment_to_destinationDetailFragment"
+            app:destination="@id/destinationDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+
+        <action
+            android:id="@+id/action_homeFragment_to_homeDestinationListFragment"
+            app:destination="@id/homeDestinationListFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <!-- Home Specific Sub-screens -->
+    <fragment
+        android:id="@+id/homeDestinationListFragment"
+        android:name="com.smarttravel.ui.destination.DestinationListFragment"
+        android:label="Khám phá">
+        <argument
+            android:name="category"
+            app:argType="string"
+            android:defaultValue="" />
+        <action
+            android:id="@+id/action_homeDestinationListFragment_to_destinationDetailFragment"
+            app:destination="@id/destinationDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <!-- Destination List -->
+    <fragment
+        android:id="@+id/destinationListFragment"
+        android:name="com.smarttravel.ui.destination.DestinationListFragment"
+        android:label="Khám phá">
+
+        <argument
+            android:name="category"
+            app:argType="string"
+            android:defaultValue="" />
+
+        <argument
+            android:name="isFavoriteOnly"
+            app:argType="boolean"
+            android:defaultValue="false" />
+
+        <action
+            android:id="@+id/action_destinationListFragment_to_destinationDetailFragment"
+            app:destination="@id/destinationDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <!-- Destination Detail -->
+    <fragment
+        android:id="@+id/destinationDetailFragment"
+        android:name="com.smarttravel.ui.destination.DestinationDetailFragment"
+        android:label="Chi tiết">
+
+        <argument
+            android:name="destinationId"
+            app:argType="integer" />
+
+        <action
+            android:id="@+id/action_destinationDetailFragment_to_mapFragment"
+            app:destination="@id/mapFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <!-- Map -->
+    <fragment
+        android:id="@+id/mapFragment"
+        android:name="com.smarttravel.ui.destination.MapFragment"
+        android:label="Bản đồ">
+
+        <argument
+            android:name="latitude"
+            app:argType="float" />
+        <argument
+            android:name="longitude"
+            app:argType="float" />
+        <argument
+            android:name="destinationName"
+            app:argType="string" />
+    </fragment>
+
+    <!-- Itinerary List -->
+    <fragment
+        android:id="@+id/itineraryFragment"
+        android:name="com.smarttravel.ui.itinerary.ItineraryFragment"
+        android:label="Lịch trình">
+        <action
+            android:id="@+id/action_itineraryFragment_to_aiItineraryRequestFragment"
+            app:destination="@id/aiItineraryRequestFragment" />
+        <action
+            android:id="@+id/action_itineraryFragment_to_itineraryDetailFragment"
+            app:destination="@id/itineraryDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+
+        <action
+            android:id="@+id/action_itineraryFragment_to_aiSuggestFragment"
+            app:destination="@id/aiSuggestFragment"
+            app:enterAnim="@anim/slide_in_up"
+            app:exitAnim="@anim/slide_out_down" />
+    </fragment>
+
+    <!-- Itinerary Detail -->
+    <fragment
+        android:id="@+id/itineraryDetailFragment"
+        android:name="com.smarttravel.ui.itinerary.ItineraryDetailFragment"
+        android:label="Chi tiết lịch trình">
+
+        <argument
+            android:name="itineraryId"
+            app:argType="integer" />
+
+        <action
+            android:id="@+id/action_itineraryDetailFragment_to_destinationDetailFragment"
+            app:destination="@id/destinationDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+    <fragment
+        android:id="@+id/aiItineraryRequestFragment"
+        android:name="com.smarttravel.ui.itinerary.AIItineraryRequestFragment"
+        android:label="AI gợi ý tour">
+
+        <action
+            android:id="@+id/action_aiItineraryRequestFragment_to_aiItineraryOptionsFragment"
+            app:destination="@id/aiItineraryOptionsFragment" />
+
+    </fragment>
+    <fragment
+        android:id="@+id/aiItineraryOptionsFragment"
+        android:name="com.smarttravel.ui.itinerary.AIItineraryOptionsFragment"
+        android:label="Chọn tour AI">
+
+        <action
+            android:id="@+id/action_aiItineraryOptionsFragment_to_aiItineraryEditorFragment"
+            app:destination="@id/aiItineraryEditorFragment" />
+
+    </fragment>
+    <fragment
+        android:id="@+id/aiItineraryEditorFragment"
+        android:name="com.smarttravel.ui.itinerary.AIItineraryEditorFragment"
+        android:label="Chỉnh tour AI" />
+    <!-- AI Suggest -->
+    <fragment
+        android:id="@+id/aiSuggestFragment"
+        android:name="com.smarttravel.ui.itinerary.AISuggestFragment"
+        android:label="AI Gợi ý" />
+
+    <!-- Chatbot -->
+    <fragment
+        android:id="@+id/chatbotFragment"
+        android:name="com.smarttravel.ui.chatbot.ChatbotFragment"
+        android:label="Trợ lý AI" />
+
+    <!-- Profile -->
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.smarttravel.ui.profile.ProfileFragment"
+        android:label="Hồ sơ">
+        <action
+            android:id="@+id/action_profileFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+        <action
+            android:id="@+id/action_profileFragment_to_profileFavoriteListFragment"
+            app:destination="@id/profileFavoriteListFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+        <action
+            android:id="@+id/action_profileFragment_to_profileItineraryListFragment"
+            app:destination="@id/profileItineraryListFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <!-- Profile Specific Sub-screens -->
+    <fragment
+        android:id="@+id/profileFavoriteListFragment"
+        android:name="com.smarttravel.ui.destination.DestinationListFragment"
+        android:label="Yêu thích">
+        <argument
+            android:name="isFavoriteOnly"
+            app:argType="boolean"
+            android:defaultValue="true" />
+        <action
+            android:id="@+id/action_profileFavoriteListFragment_to_destinationDetailFragment"
+            app:destination="@id/destinationDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/profileItineraryListFragment"
+        android:name="com.smarttravel.ui.itinerary.ItineraryFragment"
+        android:label="Lịch trình của tôi">
+        <action
+            android:id="@+id/action_profileItineraryListFragment_to_itineraryDetailFragment"
+            app:destination="@id/itineraryDetailFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left" />
+    </fragment>
+
+    <!-- Settings -->
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.smarttravel.ui.profile.SettingsFragment"
+        android:label="Cài đặt" />
+
+</navigation>

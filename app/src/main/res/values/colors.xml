@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- UNU Trip unified palette: mint, coral, clean surfaces -->
+    <color name="primary">#62BE9B</color>
+    <color name="primary_dark">#2F876D</color>
+    <color name="primary_light">#BDEDDC</color>
+    <color name="primary_soft">#E7F8F1</color>
+    <color name="accent">#FF8C72</color>
+    <color name="accent_light">#FFE7DF</color>
+    <color name="accent_dark">#D9664F</color>
+
+    <!-- Backward-compatible aliases -->
+    <color name="coral_primary">#FF8C72</color>
+    <color name="coral_light">#FFE7DF</color>
+
+    <!-- Surfaces -->
+    <color name="white">#FFFFFF</color>
+    <color name="background">#F3FBF7</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#F7FCFA</color>
+    <color name="surface_pressed">#EEF8F3</color>
+    <color name="divider">#D7E9E2</color>
+    <color name="surface_shadow">#14000000</color>
+
+    <!-- Text: high contrast on light pastel backgrounds -->
+    <color name="text_primary">#213533</color>
+    <color name="text_secondary">#5E7671</color>
+    <color name="text_hint">#8BA19C</color>
+    <color name="text_on_primary">#FFFFFF</color>
+    <color name="text_on_accent">#FFFFFF</color>
+
+    <!-- Category accents -->
+    <color name="cat_beach">#57B9D1</color>
+    <color name="cat_mountain">#70C28B</color>
+    <color name="cat_city">#8F8AF4</color>
+    <color name="cat_heritage">#E9A45C</color>
+    <color name="cat_nature">#53BFA1</color>
+
+    <!-- Status -->
+    <color name="star_color">#F5BC48</color>
+    <color name="success">#56BA7D</color>
+    <color name="error">#E87A7A</color>
+    <color name="warning">#F4BE56</color>
+
+    <!-- Chat -->
+    <color name="chat_user_bubble">#FF8C72</color>
+    <color name="chat_bot_bubble">#FFFFFF</color>
+    <color name="chat_bot_text">#213533</color>
+    <color name="chat_user_text">#FFFFFF</color>
+
+    <!-- Utility overlays -->
+    <color name="scrim">#66000000</color>
+    <color name="primary_translucent">#3362BE9B</color>
+    <color name="overlay_dark_mid">#66000000</color>
+    <color name="overlay_dark_strong">#CC000000</color>
+    <color name="white_90">#E6FFFFFF</color>
+    <color name="white_70">#B3FFFFFF</color>
+    <color name="white_60">#99FFFFFF</color>
+    <color name="white_50">#80FFFFFF</color>
+    <color name="white_20">#33FFFFFF</color>
+    <color name="white_15">#26FFFFFF</color>
+    <color name="white_10">#1AFFFFFF</color>
+    <color name="nav_unselected">#6F837F</color>
+    <color name="fee_on_image">#FFD180</color>
+</resources>

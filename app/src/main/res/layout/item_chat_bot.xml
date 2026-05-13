@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="start"
+    android:paddingStart="16dp"
+    android:paddingEnd="60dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <!-- Bot avatar -->
+    <ImageView
+        android:layout_width="34dp"
+        android:layout_height="34dp"
+        android:src="@drawable/ic_ai_avatar_small"
+        android:background="@drawable/bg_ai_avatar_sm"
+        android:padding="6dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginTop="4dp" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Bot message"
+            android:textColor="@color/chat_bot_text"
+            android:textSize="14sp"
+            android:lineSpacingMultiplier="1.4"
+            android:background="@drawable/bg_bubble_bot"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:maxWidth="260dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCreateItinerary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:minHeight="44dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:includeFontPadding="false"
+            android:singleLine="true"
+            android:ellipsize="none"
+            android:text="Tạo lịch trình"
+            android:textAllCaps="false"
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            app:backgroundTint="#FF8C72"
+            app:cornerRadius="22dp" />
+
+        <TextView
+            android:id="@+id/tvTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="10:30"
+            android:textSize="10sp"
+            android:textColor="@color/text_hint"
+            android:layout_marginTop="2dp"
+            android:layout_marginStart="2dp" />
+    </LinearLayout>
+
+</LinearLayout>

@@ -1,0 +1,9 @@
+﻿seed_name,province,aliases,note,match_status,best_db_id,best_db_name,best_db_province,best_score
+Hồ Núi Cốc,Thái Nguyên,Núi Cốc|Khu du lịch Hồ Núi Cốc,điểm du lịch hồ nổi tiếng miền Bắc,low_score,TN_0077,Hồ Suối Lạnh,Thái Nguyên,0.5755
+ATK Định Hóa,Thái Nguyên,An toàn khu Định Hóa|ATK Thai Nguyen,di tích lịch sử quan trọng,low_score,TN_0073,Chợ Định Hóa,Thái Nguyên,0.78
+Hang Phượng Hoàng,Thái Nguyên,Hang Phượng Hoàng Suối Mỏ Gà|Vo Nhai,hang động nổi tiếng,low_score,TN_0079,Làng nghề trồng hoa Phổ Yên,Thái Nguyên,0.6209
+Suối Mỏ Gà,Thái Nguyên,Mỏ Gà|Suối Mỏ Gà Võ Nhai,điểm du lịch sinh thái,low_score,TN_0077,Hồ Suối Lạnh,Thái Nguyên,0.5755
+Khu du lịch sinh thái Thái Hải,Thái Nguyên,Bản làng Thái Hải|Thai Hai Village,du lịch cộng đồng,low_score,TN_0078,Khu sinh thái hồ Suối Lạnh,Thái Nguyên,0.6729
+Đền Đuổm,Thái Nguyên,Đền Đuổm Phú Lương|Duom Temple,di tích tâm linh,low_score,TN_0076,Đền Giá,Thái Nguyên,0.5633
+Hồ Ghềnh Chè,Thái Nguyên,Ghenh Che Lake|Hồ Ghềnh Chè Sông Công,điểm du lịch hồ sinh thái,low_score,TN_0073,Chợ Định Hóa,Thái Nguyên,0.6133
+Chùa Ngọc Hoàng,TP Hồ Chí Minh,Jade Emperor Pagoda|Chùa Phước Hải,điểm tâm linh,low_score,HCM_0044,Chùa Phổ Quang,TP Hồ Chí Minh,0.7197

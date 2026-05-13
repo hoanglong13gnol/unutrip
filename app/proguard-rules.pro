@@ -1,0 +1,4 @@
+-keep class com.smarttravel.data.model.** { *; }
+-keep class com.google.gson.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
