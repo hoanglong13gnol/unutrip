@@ -1,6 +1,6 @@
 import { db } from "../db.js";
 import { parseJsonArray } from "../utils.js";
-import * as ragPlacesRepository from "../repositories/ragPlaces.repository.js";
+import * as placeIdMapRepository from "../repositories/placeIdMap.repository.js";
 import * as destinationImagesRepository from "../repositories/destinationImages.repository.js";
 import * as usersRepository from "../repositories/users.repository.js";
 
@@ -53,7 +53,7 @@ export async function resolveDestinationIdsFromSelection(selectedDestinations) {
       continue;
     }
 
-    const destinationId = await ragPlacesRepository.getDestinationIdByPlaceId(rawPlaceId);
+    const destinationId = await placeIdMapRepository.getDestinationIdByRagPlaceId(rawPlaceId);
 
     if (!destinationId) {
       unresolved.push({
