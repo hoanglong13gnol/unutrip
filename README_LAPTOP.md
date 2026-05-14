@@ -137,7 +137,8 @@ GEMINI_API_KEY=
 |------------|-------------|
 | Emulator không gọi được API | Backend có đang chạy trên host cổng **3000**? Thử `API_BASE_URL` `http://10.0.2.2:3000/api/`. |
 | `connection refused` / timeout | Firewall Windows chặn cổng 3000; tắt thử hoặc mở rule cho Node/Docker. |
-| App trắng / lỗi login | DB chưa import hoặc sai user/DB/password so với `.env`. |
+| App “0 địa điểm” | Backend đọc **`app_places`**, không chỉ `destinations`. Làm **`001_create_app_places.sql`** + **`quick_populate_app_places_from_legacy_database_sql.sql`** (mục §4). |
+| MySQL **1101 / BLOB … can’t have a default** khi chạy **`001_create_app_places.sql`** | Đã sửa trong repo: **`tags_json`** dùng **VARCHAR + DEFAULT**. `git pull`, nếu đã tạo bảng lỗi: `docker compose exec -T mysql mysql -uunutrip -punutrip_pass unudata -e "DROP TABLE IF EXISTS app_places;"` rồi chạy lại file `001`. |
 | RAG / AI lỗi | Container **rag** healthy? `GEMINI_API_KEY`, artifact BM25 trong image (build RAG Dockerfile) — xem **`README.md`** phần RAG. |
 | Docker hết RAM | Giảm số container không cần thiết trong demo hoặc tăng RAM cho Docker Desktop / đóng app nặng. |
 

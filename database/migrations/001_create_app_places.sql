@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS `app_places` (
   `kid_friendly` tinyint(1) NOT NULL DEFAULT 0,
   `elderly_friendly` tinyint(1) NOT NULL DEFAULT 0,
   `recommended_use` varchar(50) DEFAULT NULL,
-  `tags_json` text NOT NULL DEFAULT '[]',
+  -- VARCHAR + DEFAULT: TEXT/BLOB DEFAULT gây lỗi 1101 trên một số bản MySQL/MariaDB.
+  `tags_json` varchar(4096) NOT NULL DEFAULT '[]',
   `primary_image_url` varchar(2048) DEFAULT NULL COMMENT 'Optional denormalized cache; source of truth is place_images',
   `rating` decimal(3,2) DEFAULT NULL COMMENT 'Must be derived from reviews; never from RAG quality_score',
   `review_count` int(11) DEFAULT NULL COMMENT 'Must be derived from reviews',
