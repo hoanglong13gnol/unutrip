@@ -7,7 +7,6 @@
  * now live in `./_shared/*`.
  */
 
-import { db } from "../db.js";
 import * as destinationsRepository from "../repositories/destinations.repository.js";
 import { escapeHtml } from "./_shared/escape.js";
 import { renderLayout } from "./_shared/layout.js";
@@ -23,17 +22,9 @@ export function registerDestinationsAdminRoutes(router) {
       let dests;
       if (rawQ) {
         const like = `%${rawQ}%`;
-        dests = await db.query(
-          `SELECT id, name, city, province, category, rating FROM app_places
-           WHERE name LIKE ? OR city LIKE ? OR IFNULL(province,'') LIKE ? OR IFNULL(address,'') LIKE ?
-             OR category LIKE ? OR CAST(id AS CHAR) LIKE ?
-           ORDER BY id DESC`,
-          [like, like, like, like, like, like]
-        );
+        dests = await destinationsRepository.searchAdminDestinations({ like });
       } else {
-        dests = await db.query(
-          "SELECT id, name, city, province, category, rating FROM app_places ORDER BY id DESC"
-        );
+        dests = await destinationsRepository.listAdminDestinations();
       }
 
       const content = `
@@ -317,28 +308,23 @@ export function registerDestinationsAdminRoutes(router) {
       const prov = province != null ? String(province) : "";
 
       if (Number.isFinite(idNum) && idNum > 0) {
-        await db.run(
-          `UPDATE app_places
-           SET name=?, description=?, address=?, city=?, province=?, latitude=?, longitude=?, category=?, open_time=?, close_time=?
-           WHERE id=?`,
-          [
-            nameTrim,
-            descTrim,
-            addr,
-            cityV,
-            prov,
-            lat,
-            lng,
-            cat,
-            open_time || null,
-            close_time || null,
-            idNum
-          ]
-        );
+        await destinationsRepository.updateAdminDestination({
+          id: idNum,
+          name: nameTrim,
+          description: descTrim,
+          address: addr,
+          city: cityV,
+          province: prov,
+          latitude: lat,
+          longitude: lng,
+          category: cat,
+          openTime: open_time || null,
+          closeTime: close_time || null
+        });
         return res.json({ success: true });
       }
 
-      const nextRow = await db.get("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM app_places");
+      const nextRow = await destinationsRepository.getNextAppPlaceId();
       const newId = Number(nextRow?.next_id);
       if (!Number.isFinite(newId) || newId <= 0) {
         return res.status(500).json({ success: false, message: "Không tạo được ID mới" });
@@ -347,28 +333,21 @@ export function registerDestinationsAdminRoutes(router) {
       const placeKey = `ADM_${newId}`;
       const shortDesc = descTrim.length > 500 ? descTrim.slice(0, 500) : descTrim;
 
-      await db.run(
-        `INSERT INTO app_places (
-          id, place_key, name, description, short_description, address, city, province, area,
-          latitude, longitude, category, open_time, close_time,
-          tags_json, kid_friendly, elderly_friendly, is_active, rating, review_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, '[]', 0, 0, 1, 0, 0)`,
-        [
-          newId,
-          placeKey,
-          nameTrim,
-          descTrim,
-          shortDesc,
-          addr,
-          cityV,
-          prov,
-          lat,
-          lng,
-          cat,
-          open_time || null,
-          close_time || null
-        ]
-      );
+      await destinationsRepository.insertAdminDestination({
+        id: newId,
+        placeKey,
+        name: nameTrim,
+        description: descTrim,
+        shortDescription: shortDesc,
+        address: addr,
+        city: cityV,
+        province: prov,
+        latitude: lat,
+        longitude: lng,
+        category: cat,
+        openTime: open_time || null,
+        closeTime: close_time || null
+      });
       return res.json({ success: true, id: newId });
     } catch (e) {
       return res.status(500).json({ success: false, message: e.message });

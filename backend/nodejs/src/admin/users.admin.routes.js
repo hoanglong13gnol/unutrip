@@ -7,7 +7,6 @@
  */
 
 import bcrypt from "bcryptjs";
-import { db } from "../db.js";
 import * as usersRepository from "../repositories/users.repository.js";
 import { escapeHtml } from "./_shared/escape.js";
 import { renderLayout } from "./_shared/layout.js";
@@ -22,16 +21,9 @@ export function registerUsersAdminRoutes(router) {
       let users;
       if (rawQ) {
         const like = `%${rawQ}%`;
-        users = await db.query(
-          `SELECT id, full_name, email, phone, created_at FROM users
-           WHERE full_name LIKE ? OR email LIKE ? OR IFNULL(phone,'') LIKE ? OR CAST(id AS CHAR) LIKE ?
-           ORDER BY created_at DESC`,
-          [like, like, like, like]
-        );
+        users = await usersRepository.searchAdminUsers({ like });
       } else {
-        users = await db.query(
-          "SELECT id, full_name, email, phone, created_at FROM users ORDER BY created_at DESC"
-        );
+        users = await usersRepository.listAdminUsers();
       }
 
       const content = `

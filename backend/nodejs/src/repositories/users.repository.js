@@ -107,3 +107,37 @@ export async function getAdminUserDetailById(id) {
 export async function deleteUserById(id) {
   return db.run("DELETE FROM users WHERE id = ?", [id]);
 }
+
+/**
+ * Admin-scoped listing used by `GET /admin/users` (no-search variant).
+ *
+ * Phase 5 continuation of the Phase 4 pilot — SQL string is byte-identical
+ * to the previous inline `db.query` call. The column projection is
+ * consumed directly by the rendered admin HTML (template renders fields
+ * by their exact column name), so do NOT change which columns are
+ * selected or their order.
+ */
+export async function listAdminUsers() {
+  return db.query(
+    "SELECT id, full_name, email, phone, created_at FROM users ORDER BY created_at DESC"
+  );
+}
+
+/**
+ * Admin-scoped 4-column LIKE search used by `GET /admin/users?q=…`.
+ *
+ * Phase 5 continuation of the Phase 4 pilot — SQL is byte-identical to
+ * the previous inline `db.query` call, including the 11-space leading
+ * indentation on the continuation lines (kept so the SQL string content
+ * is preserved exactly, not just visually). Caller passes the
+ * already-`%…%`-wrapped `like` string; this repo function does NOT wrap
+ * it (matches the pre-Phase-5 contract).
+ */
+export async function searchAdminUsers({ like }) {
+  return db.query(
+    `SELECT id, full_name, email, phone, created_at FROM users
+           WHERE full_name LIKE ? OR email LIKE ? OR IFNULL(phone,'') LIKE ? OR CAST(id AS CHAR) LIKE ?
+           ORDER BY created_at DESC`,
+    [like, like, like, like]
+  );
+}

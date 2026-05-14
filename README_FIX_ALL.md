@@ -1512,4 +1512,295 @@ These remain queued for Phase 5.
 
 ---
 
+## 17. Phase 5 Result
+
+> Implemented on the `v2/database-refactor` branch on top of the Phase 4
+> commit, against the plan in `README_FIX_ALL_PHASE5.md`. This section
+> is the running log of what actually shipped in Phase 5.
+
+### 17.1 What was done
+
+Phase 5 was the **DTO split + first-time `adminAuth` test coverage +
+remaining admin SQL repository sweep** pass. The 263-line
+`src/routes/helpers.js` grab-bag was split into three per-domain DTO
+modules; the new `adminAuth` middleware got an automated 9-case behavior
+matrix; the inline `db.*` calls that Phase 4 explicitly deferred from
+the user / destination / AI-report admin sections were moved behind new
+repository functions; and a router-registration test was added that
+locks down the 18 admin routes in their documented order.
+
+All four work items (A, B required; C, D optional) shipped:
+
+- **Work item A — `routes/helpers.js` split into per-domain DTO modules.**
+  Three new files under `src/shared/dto/` hold byte-identical copies of
+  the original function bodies:
+  - `src/shared/dto/destinationDto.js` — exports `attachDestinationImages`,
+    `fixUrl`, `normalizeCategoryParam`, `toDestinationDto`. The private
+    helpers `getImageUrlValue` and `getDestinationImages` stay
+    non-exported, exactly as they were inside `helpers.js`. `fixUrl` is
+    exported because the user DTO needs it for the `avatar` field.
+  - `src/shared/dto/userDto.js` — exports `toUserDto`, `getUserById`,
+    `firstArrayValue`. Imports `fixUrl` from `./destinationDto.js`. The
+    `getUserById` function still throws `new Error("User not found")`
+    rather than an `HttpError` — the existing consumer (`reviews.service`)
+    catches that exact shape.
+  - `src/shared/dto/itineraryDto.js` — exports `flattenSelectedOptionDays`,
+    `resolveDestinationIdsFromSelection`, `itineraryRowToDto`. The
+    `placeIdMapRepository` import path grew one extra `..` segment
+    because the new file lives one directory deeper than the old
+    `routes/helpers.js`; that is the only mechanical change.
+  - `src/routes/helpers.js` was reduced from 263 lines to a 21-line
+    re-export shim that exposes all 10 original names from the three
+    new DTO modules. None of the eight existing import sites
+    (`modules/auth/auth.controller.js`,
+    `modules/users/users.controller.js`,
+    `modules/destinations/destinations.controller.js`,
+    `services/destinations.service.js`, `services/favorites.service.js`,
+    `services/itineraries.service.js`, `services/reviews.service.js`)
+    were touched.
+  - Verified by booting each consumer file via `import("…")` (all seven
+    consumers report `all consumers import OK`) and by dumping
+    `Object.keys(await import("./src/routes/helpers.js"))` — exactly the
+    same 10 names with `missing: []`.
+- **Work item B — `tests/adminAuth.middleware.test.js`.** New
+  vitest+supertest test file with **9 `it(…)` cases** that build a
+  one-route Express app per case (no `createApp()`, no DB, no RAG
+  client) and exercise:
+  - Dev-mode passthrough returns `200 "OK"` and warns exactly once via
+    `console.warn` with a message matching
+    `/ADMIN_BASIC_USER\/ADMIN_BASIC_PASS not set/`.
+  - The one-time warning guard holds across multiple requests against
+    the same loaded middleware instance.
+  - Six gated-mode failure scenarios (no header, wrong scheme, missing
+    colon in the decoded base64 value, wrong password, wrong username)
+    each return `401 "Unauthorized"` with
+    `WWW-Authenticate: Basic realm="UnuTrip Admin"`.
+  - Correct credentials (`admin:secret`) return `200 "OK"` with no
+    `WWW-Authenticate` header set.
+  - A password containing colons (`admin:s:e:c`, with the env var
+    `ADMIN_BASIC_PASS=s:e:c`) is split at the **first** colon — the
+    request reaches the handler and returns `200 "OK"`. This guards the
+    `decoded.indexOf(":")`-based split inside the middleware.
+  - The test uses a small `loadMiddleware()` helper built on
+    `vi.resetModules()` + a dynamic `await import(...)` so the
+    module-level `warned` boolean inside `adminAuth.middleware.js` starts
+    `false` at the top of every test. A multi-line comment at the top of
+    the file documents why this pattern is necessary so future readers
+    do not refactor it away. `adminAuth.middleware.js` itself was NOT
+    edited.
+- **Work item C (optional pilot, completed) — remaining admin SQL
+  repository sweep.** New functions added to existing repository files
+  without modifying any existing function body or signature, plus one
+  brand-new single-purpose repository file:
+  - `src/repositories/users.repository.js`: `+listAdminUsers()` (no-search
+    listing) and `+searchAdminUsers({ like })` (4-column LIKE search).
+  - `src/repositories/destinations.repository.js`: `+listAdminDestinations()`
+    (no-search listing), `+searchAdminDestinations({ like })` (6-column
+    LIKE search), `+updateAdminDestination({...})` (UPDATE branch of
+    `POST /destinations/save`), `+getNextAppPlaceId()` (the
+    `SELECT COALESCE(MAX(id), 0) + 1 …` next-id lookup), and
+    `+insertAdminDestination({...})` (INSERT branch of
+    `POST /destinations/save`).
+  - `src/repositories/appPlacesStats.repository.js` (new file):
+    `getCategoryCounts()` and `getOverallRatingAverage()` — the two
+    aggregate queries used by `GET /admin/ai-report`'s prompt builder.
+    Split out from `destinations.repository.js` because that file
+    intentionally does not own aggregate queries.
+  - Each new SQL string was byte-equality-verified against the original
+    inline string before commit (a throwaway verification script captured
+    each `db.{query,get,run}` invocation, dumped the full SQL string, and
+    compared lengths plus first-differing-character positions; all seven
+    new strings reported `MATCH`). The multi-line continuation indents
+    (11 spaces for `WHERE`/`SET`/`ORDER BY` continuations and 10/8 spaces
+    for the multi-column `INSERT` block) were preserved exactly because
+    those whitespace bytes are part of the SQL string content emitted
+    over the wire.
+  - The three admin section files
+    (`src/admin/users.admin.routes.js`,
+    `src/admin/destinations.admin.routes.js`,
+    `src/admin/aiReport.admin.routes.js`) now call the new repository
+    functions instead of inlining `db.*`. The unused `import { db }`
+    line at the top of each was removed (lint would otherwise flag it).
+    Every other line of each handler — validation, error envelopes
+    (including `"Vĩ độ / kinh độ không hợp lệ"`, `"Tên địa điểm là bắt buộc"`,
+    `"Mô tả là bắt buộc"`, `"Không tạo được ID mới"`,
+    `"ID không hợp lệ"`, `"Không tìm thấy người dùng"`,
+    `"Không tìm thấy địa điểm"`, `"Không xóa được (kiểm tra ràng buộc CSDL)."`),
+    rendered HTML, Vietnamese strings, the `bcrypt.hashSync(password, 10)`
+    call in `POST /users/save`, the `place_key = "ADM_${newId}"`
+    derivation, the `shortDesc` 500-char truncation, the
+    `Number.isFinite(lat/lng)` validation, and the
+    `getResolvedAiModelUrl()` + RAG-fallback chain in `GET /ai-report`
+    — is byte-identical.
+  - `POST /users/save` (with `bcrypt.hashSync` plus three branches) and
+    the `place_images` / `place_id_map` writes (which do not exist in
+    the current `POST /destinations/save`) were left untouched per the
+    plan's forbidden list.
+- **Work item D (optional pilot, completed) —
+  `tests/admin.router.test.js`.** New vitest test file with one
+  `it(…)` case that boots `buildAdminRouter()` (stubbed `src/db.js`),
+  walks `router.stack`, and asserts the `(method, path)` pairs equal the
+  18-tuple documented in the Phase 5 plan in exact order. A future split
+  that drops a route or reorders sections will trip this test rather
+  than silently regress on production.
+
+### 17.2 Files modified (6)
+
+```
+backend/nodejs/src/
+├── admin/
+│   ├── aiReport.admin.routes.js                      ← work item C: aggregates moved to appPlacesStats repo
+│   ├── destinations.admin.routes.js                  ← work item C: listing/search/UPDATE/next-id/INSERT moved to repo
+│   └── users.admin.routes.js                         ← work item C: listing/search moved to repo
+├── repositories/
+│   ├── destinations.repository.js                    ← work item C: +5 new exports (list/search/update/nextId/insert admin)
+│   └── users.repository.js                           ← work item C: +2 new exports (listAdminUsers, searchAdminUsers)
+└── routes/
+    └── helpers.js                                    ← work item A: 263-line grab-bag → 21-line re-export shim
+```
+
+No existing repository / DTO / service / module function was renamed,
+removed, or had its body modified. The eight import sites referencing
+`routes/helpers.js` are unchanged.
+
+### 17.3 Files created (6)
+
+```
+backend/nodejs/
+├── src/
+│   ├── repositories/
+│   │   └── appPlacesStats.repository.js              ← work item C: getCategoryCounts, getOverallRatingAverage
+│   └── shared/dto/
+│       ├── destinationDto.js                         ← work item A: attachDestinationImages, fixUrl, normalizeCategoryParam, toDestinationDto
+│       ├── itineraryDto.js                           ← work item A: flattenSelectedOptionDays, resolveDestinationIdsFromSelection, itineraryRowToDto
+│       └── userDto.js                                ← work item A: toUserDto, getUserById, firstArrayValue
+└── tests/
+    ├── admin.router.test.js                          ← work item D: 18-route registration shape lock
+    └── adminAuth.middleware.test.js                  ← work item B: 9-case behavior matrix
+```
+
+Three for work item A, one for B, one for C, one for D = exactly the
+six-file budget allowed by `README_FIX_ALL_PHASE5.md §5.2`.
+
+### 17.4 Files explicitly NOT modified
+
+`backend/nodejs/src/modules/**` (Phase 2 module shells),
+`backend/nodejs/src/services/**` (Phase 3 transactional services),
+`backend/nodejs/src/admin/_shared/**` (Phase 4 admin helpers),
+`backend/nodejs/src/admin/{dashboard,system,ragAi}.admin.routes.js`
+(non-pilot Phase 4 sections), `backend/nodejs/src/admin.js` and
+`backend/nodejs/src/admin/index.js` (Phase 4 shim + factory),
+`backend/nodejs/src/routes/{*.routes.js,index.js}` (Phase 2 shims and
+the `registerApiRoutes` aggregator),
+`backend/nodejs/src/middlewares/**` (including
+`adminAuth.middleware.js` — only TESTED, never edited),
+`backend/nodejs/src/db.js`, `backend/nodejs/src/auth.js`,
+`backend/nodejs/src/utils.js`, `backend/nodejs/src/index.js`,
+`backend/nodejs/src/app.js`, `backend/nodejs/src/config/**`,
+`backend/nodejs/src/lib/**`, `backend/nodejs/src/schemas/**`,
+`backend/nodejs/src/shared/{http,db,utils}/**` (Phase 1 + Phase 3
+plumbing — only the brand-new `src/shared/dto/` subdirectory was added),
+`backend/nodejs/src/repositories/*.repository.js` EXCEPT the two pilot
+files and the new `appPlacesStats.repository.js` (and even there, only
+**new** functions were added — no existing function body was touched),
+`backend/nodejs/tests/{health,ai-rag-chat.route,ragContract,ragUpstream}.test.js`
+(Phase 1 baseline tests), `backend/nodejs/package.json`,
+`backend/nodejs/package-lock.json`, `backend/nodejs/eslint.config.js`,
+`backend/nodejs/vitest.config.js`, `backend/nodejs/.prettierrc.json`,
+`backend/nodejs/database.sql`, `backend/nodejs/server.py`,
+`backend/nodejs/test_ai.js`, `backend/nodejs/seed.js`, `.env`,
+`.env.example`, `backend/rag/**`, and every Android source.
+
+### 17.5 Verification
+
+- **`npm test` is green.** `Test Files 6 passed (6)` /
+  `Tests 17 passed (17)`. The Phase 1 baseline (4 files / 7 tests)
+  keeps its counts unchanged; work item B added one new file with 9
+  `it(…)` cases (matching the plan's §3.2.3 minimum) and work item D
+  added one new file with 1 `it(…)` case. No existing test is modified.
+- **`npm run lint` is clean.** Zero ESLint findings across `src/` and
+  `tests/`. The `no-useless-escape` rule, silenced for the legacy
+  `src/admin.js` path only, does not fire on any new file.
+- **`routes/helpers.js` shim is intact.** Importing the shim and
+  enumerating its exports yields the same 10 names as before
+  (`attachDestinationImages`, `firstArrayValue`, `fixUrl`,
+  `flattenSelectedOptionDays`, `getUserById`, `itineraryRowToDto`,
+  `normalizeCategoryParam`, `resolveDestinationIdsFromSelection`,
+  `toDestinationDto`, `toUserDto`); `missing: []`, `totalGot: 10`. The
+  file is 21 lines (well under the §8.5 cap of 30).
+- **Consumer smoke import.** All seven consumer files
+  (`modules/auth/auth.controller.js`, `modules/users/users.controller.js`,
+  `modules/destinations/destinations.controller.js`,
+  `services/destinations.service.js`, `services/favorites.service.js`,
+  `services/itineraries.service.js`, `services/reviews.service.js`)
+  import cleanly through the shim — no circular-import warnings.
+- **Admin router registration order preserved.** Booting the new
+  `buildAdminRouter()` and walking `router.stack` reports exactly the
+  same 18 entries in the same order as Phase 4 — locked down by
+  `tests/admin.router.test.js`.
+- **SQL byte-identity verified.** A throwaway script captured each
+  `db.{query,get,run}` invocation from the seven new repository
+  functions, dumped the full SQL string, and compared each against the
+  original inline string (literal byte-for-byte comparison with
+  per-byte diff reporting). All seven reported `MATCH`. The script was
+  deleted before commit; only the production code paths remain.
+- **No HTML byte change.** No template literal under `/admin/**` was
+  touched. The three admin section files still render the same
+  rendered HTML for every path; only the data source (repository call
+  vs inline `db.*`) changed.
+- **No JSON shape change.** All four JSON-returning admin endpoints
+  (`GET /users/api/:id`, `GET /destinations/api/:id`, `GET /ai-report`,
+  and the six `/rag-ai/*` proxies) call the same helpers / repositories
+  and respond with the same `{ success, … }` /
+  `{ ok, status, url, data }` envelopes. `POST /users/save`,
+  `POST /destinations/save`, and the two `POST /…/delete/:id`
+  endpoints return the same `{ success, message }` / `{ success, id }`
+  shapes as before.
+- **Android API contract unchanged.** No file under `src/modules/`,
+  `src/services/`, `src/auth.js`, or `src/utils.js` was edited; the
+  33 endpoints under `/api/**` are not modified. The DTO split moved
+  function bodies between files but every export name and every
+  function signature on the public surface is preserved.
+- **RAG admin contract unchanged.** `fetchRagJson` / `postRagJson` /
+  `formatRagFetchError` / `ragHeadersForPath` still live in
+  `src/admin/_shared/ragHttp.js`. `GET /ai-report` still falls back to
+  `postRagJson("/rag/chat", …, 30000)` exactly as before.
+- **No schema change.** `backend/nodejs/database.sql` is not opened.
+- **No new npm dependency.** `package.json` and `package-lock.json`
+  are untouched.
+- **`backend/rag` untouched.** No FastAPI file modified.
+- **Android sources untouched.** No file under `app/` modified.
+- **File-level sanity.** `Get-Content src/routes/helpers.js | Measure-Object -Line`
+  reports 21 lines. `Get-ChildItem src/shared/dto` reports 3 files
+  (`destinationDto.js`, `itineraryDto.js`, `userDto.js`).
+  `Test-Path tests/adminAuth.middleware.test.js` and
+  `Test-Path tests/admin.router.test.js` are both `True`.
+  `Test-Path src/repositories/appPlacesStats.repository.js` is `True`.
+
+### 17.6 What is NOT done in Phase 5 (deferred)
+
+- Extracting HTML templates from inline JS literals into separate
+  `.html` files (Phase 6).
+- Tightening the helmet CSP to remove `'unsafe-inline'` and
+  `scriptSrcAttr` (Phase 6, requires the template extraction first).
+- Refactoring `POST /users/save` (the `bcrypt.hashSync` + three-branch
+  INSERT/UPDATE) into a repository function. Three independent code
+  paths plus duplicate-email lookups through the existing
+  `getUserIdByEmail{,ExcludingUser}` make this a Phase-6 / Phase-7
+  candidate.
+- Adding image-upload / `place_images` / `place_id_map` writes to
+  `POST /destinations/save`. The current handler only writes
+  `app_places`; the admin UI doesn't upload images today, and Phase 5
+  did not introduce the capability.
+- Editing the eight `routes/helpers.js` consumer files to import
+  directly from `src/shared/dto/*.js`. The re-export shim was designed
+  precisely so callers don't have to change; doing that churn now would
+  inflate the Phase 5 diff for zero behavior benefit. A future Phase
+  may rewrite the import sites if/when it lands a related refactor.
+- Anything under `backend/rag/**` or any Android source.
+
+These remain queued for Phase 6.
+
+---
+
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

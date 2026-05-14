@@ -133,3 +133,123 @@ export async function getAdminDestinationDetailById(id) {
 export async function deleteDestinationById(id) {
   return db.run("DELETE FROM app_places WHERE id = ?", [id]);
 }
+
+/**
+ * Admin-scoped listing used by `GET /admin/destinations` (no-search variant).
+ *
+ * Phase 5 continuation of the Phase 4 pilot — SQL string is byte-identical
+ * to the previous inline `db.query` call. The admin HTML template renders
+ * `d.id`, `d.name`, `d.city`, `d.province`, `d.category`, `d.rating` by
+ * exact column name, so do NOT change the projection.
+ */
+export async function listAdminDestinations() {
+  return db.query(
+    "SELECT id, name, city, province, category, rating FROM app_places ORDER BY id DESC"
+  );
+}
+
+/**
+ * Admin-scoped 6-column LIKE search used by `GET /admin/destinations?q=…`.
+ *
+ * Phase 5 continuation of the Phase 4 pilot — SQL is byte-identical to
+ * the previous inline `db.query` call, including the original 11/13/11
+ * continuation indentation (preserved so the SQL string content is
+ * byte-identical, not merely visually similar). Caller passes the
+ * already-`%…%`-wrapped `like` string.
+ */
+export async function searchAdminDestinations({ like }) {
+  return db.query(
+    `SELECT id, name, city, province, category, rating FROM app_places
+           WHERE name LIKE ? OR city LIKE ? OR IFNULL(province,'') LIKE ? OR IFNULL(address,'') LIKE ?
+             OR category LIKE ? OR CAST(id AS CHAR) LIKE ?
+           ORDER BY id DESC`,
+    [like, like, like, like, like, like]
+  );
+}
+
+/**
+ * Admin-scoped UPDATE used by the `POST /admin/destinations/save` UPDATE
+ * branch (when `id` is a positive integer).
+ *
+ * Phase 5 continuation of the Phase 4 pilot — SQL statement, column
+ * order, and `?` placeholder count are byte-identical to the previous
+ * inline `db.run` call. Caller pre-coerces `openTime` / `closeTime` to
+ * `null` when blank (matches the pre-Phase-5 behavior).
+ */
+export async function updateAdminDestination({
+  id,
+  name,
+  description,
+  address,
+  city,
+  province,
+  latitude,
+  longitude,
+  category,
+  openTime,
+  closeTime
+}) {
+  return db.run(
+    `UPDATE app_places
+           SET name=?, description=?, address=?, city=?, province=?, latitude=?, longitude=?, category=?, open_time=?, close_time=?
+           WHERE id=?`,
+    [name, description, address, city, province, latitude, longitude, category, openTime, closeTime, id]
+  );
+}
+
+/**
+ * Admin-scoped next-id lookup used by the `POST /admin/destinations/save`
+ * INSERT branch (when `id` is missing or non-positive).
+ *
+ * Phase 5 continuation of the Phase 4 pilot — returns the raw row exactly
+ * as the inline `db.get` did. The admin handler reads `nextRow?.next_id`,
+ * so the row shape must keep the `next_id` column name.
+ */
+export async function getNextAppPlaceId() {
+  return db.get("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM app_places");
+}
+
+/**
+ * Admin-scoped INSERT used by the `POST /admin/destinations/save` INSERT
+ * branch. Phase 5 bakes the default-value literals (`'[]'`, `0`, `0`, `1`,
+ * `0`, `0`) into the SQL string as before so the admin handler stops
+ * passing them. SQL text and placeholder count are byte-identical.
+ */
+export async function insertAdminDestination({
+  id,
+  placeKey,
+  name,
+  description,
+  shortDescription,
+  address,
+  city,
+  province,
+  latitude,
+  longitude,
+  category,
+  openTime,
+  closeTime
+}) {
+  return db.run(
+    `INSERT INTO app_places (
+          id, place_key, name, description, short_description, address, city, province, area,
+          latitude, longitude, category, open_time, close_time,
+          tags_json, kid_friendly, elderly_friendly, is_active, rating, review_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, '[]', 0, 0, 1, 0, 0)`,
+    [
+      id,
+      placeKey,
+      name,
+      description,
+      shortDescription,
+      address,
+      city,
+      province,
+      latitude,
+      longitude,
+      category,
+      openTime,
+      closeTime
+    ]
+  );
+}

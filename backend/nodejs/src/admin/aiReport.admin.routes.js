@@ -7,15 +7,15 @@
  */
 
 import { getResolvedAiModelUrl } from "../config/env.js";
-import { db } from "../db.js";
+import * as appPlacesStatsRepository from "../repositories/appPlacesStats.repository.js";
 import { postRagJson } from "./_shared/ragHttp.js";
 
 export function registerAiReportAdminRoutes(router) {
   // 5. AI Report API
   router.get("/ai-report", async (req, res) => {
     try {
-      const catStats = await db.query("SELECT category, COUNT(*) as count FROM app_places GROUP BY category");
-      const overall = await db.get("SELECT AVG(rating) as avgRating FROM app_places");
+      const catStats = await appPlacesStatsRepository.getCategoryCounts();
+      const overall = await appPlacesStatsRepository.getOverallRatingAverage();
       const avgNum = Number(overall?.avgRating);
       const avgRatingText = Number.isFinite(avgNum) ? avgNum.toFixed(2) : "0.00";
 
