@@ -29,13 +29,40 @@ Android → http(s)://<host>:3000/api/* → Node → MySQL
 UNUtrip/
 ├── .env                    # Cấu hình chung (backend Node, RAG đọc từ đây qua PROJECT_ROOT)
 ├── .env.example            # Mẫu biến môi trường
+├── README_FIX_ALL.md       # Nhật ký refactor backend Node theo từng phase (chi tiết kỹ thuật)
 ├── app/                    # Module Android duy nhất (Gradle root include ':app')
 ├── backend/
-│   ├── nodejs/             # API Express
-│   │   └── src/
-│   │       ├── config/env.js, config/ragClient.js
-│   │       ├── routes.js           # Re-export buildRouter
-│   │       └── routes/             # Router tách module (xem mục “Thay đổi đã làm”)
+│   ├── nodejs/             # API Express + admin HTML
+│   │   ├── src/
+│   │   │   ├── app.js              # Factory Express (API /api, admin /admin, helmet, lỗi tập trung)
+│   │   │   ├── index.js            # process lắng nghe cổng
+│   │   │   ├── db.js               # Pool MySQL + db.query|get|run
+│   │   │   ├── auth.js             # JWT middleware + signToken
+│   │   │   ├── routes.js           # Re-export buildRouter từ routes/index.js
+│   │   │   ├── routes/
+│   │   │   │   ├── index.js        # Gắn mọi route công khai /api/* → modules/**
+│   │   │   │   └── helpers.js      # Shim re-export DTO (tương thích; ưu tiên import từ shared/dto)
+│   │   │   ├── modules/            # API theo feature (routes → controller → service)
+│   │   │   │   ├── auth/           # register, login, logout
+│   │   │   │   ├── users/
+│   │   │   │   ├── destinations/
+│   │   │   │   ├── favorites/
+│   │   │   │   ├── reviews/
+│   │   │   │   ├── itineraries/
+│   │   │   │   ├── ai/             # RAG proxy + itinerary AI (contract /api không đổi)
+│   │   │   │   └── health/
+│   │   │   ├── services/           # Orchestration gọi repositories
+│   │   │   ├── repositories/       # SQL tham số hóa
+│   │   │   ├── shared/
+│   │   │   │   ├── dto/            # toUserDto, toDestinationDto, itineraryDto, …
+│   │   │   │   ├── db/withTransaction.js
+│   │   │   │   └── http/           # HttpError, asyncHandler, response helpers
+│   │   │   ├── middlewares/        # requestId, adminAuth, CSP nonce, notFound, errorHandler
+│   │   │   ├── admin/              # Router admin (HTML + JSON), templates/*.html
+│   │   │   ├── admin.js            # Shim → admin/index.js
+│   │   │   ├── lib/                # ragUpstream, httpFetch
+│   │   │   └── schemas/            # ragContract (zod)
+│   │   └── tests/                  # Vitest: health, auth (mock DB), DTO, admin, RAG, …
 │   └── rag/                # FastAPI RAG
 │       ├── app/main.py
 │       ├── core/
@@ -56,7 +83,7 @@ UNUtrip/
 
 ### 2. Biến môi trường (root `.env`)
 
-Xem **`.env.example** đầy đủ. Các nhóm chính:
+Xem `.env.example` đầy đủ. Các nhóm chính:
 
 - **Node**: `BACKEND_HOST`, `BACKEND_PORT`, `JWT_SECRET`, `DB_*`, `RAG_BASE_URL`
 - **RAG / AI**: `AI_RUNTIME_MODE`, `ENABLE_GEMINI`, `GEMINI_API_KEY`, `GEMINI_MODEL`, …
@@ -72,6 +99,14 @@ npm run dev
 ```
 
 Mặc định load `.env` từ thư mục gốc repo (`../../../.env` từ `src/`).
+
+#### Kiểm thử & lint
+
+```bash
+cd backend/nodejs
+npm test          # Vitest — integration nhẹ (health, auth với mock repository, 404) + unit DTO + RAG contract
+npm run lint      # ESLint trên src/ và tests/
+```
 
 ### 4. Chạy RAG (Python)
 
@@ -136,9 +171,11 @@ docker run -p 8001:8001 --env-file .env unutrip-rag
 
 ### A. Backend Node (`backend/nodejs`)
 
-1. **Tách router**  
-   - `src/routes.js` chỉ re-export `buildRouter` từ `src/routes/index.js`.  
-   - Module: `auth.routes.js`, `users.routes.js`, `favorites.routes.js`, `destinations.routes.js`, `reviews.routes.js`, `itineraries.routes.js`, `ai.routes.js`, cùng `helpers.js`, `upload.js`.
+1. **Tách router & module hóa API**  
+   - `src/routes.js` re-export `buildRouter` từ `src/routes/index.js`.  
+   - Mỗi nhóm `/api/*` được đăng ký qua `src/modules/<feature>/` (file `*.routes.js` + `*.controller.js`); logic nghiệp vụ nằm trong `src/services/*`, SQL trong `src/repositories/*`.  
+   - `src/routes/helpers.js` chỉ còn **shim** re-export sang `src/shared/dto/*` (import trực tiếp `shared/dto` trong code mới).  
+   - `src/admin/*` + `src/admin/templates/` phục vụ dashboard HTML; `src/admin.js` là shim tương thích.
 
 2. **Cấu hình & bảo mật**  
    - `src/config/env.js`: `RAG_BASE_URL`, `getJwtSecret()`, `assertSafeProductionConfig()`.  

@@ -1897,6 +1897,28 @@ These remain queued for Phase 6.
 
 - **`npm test`** / **`npm run lint`** in `backend/nodejs/` — run after this change; regressions block merge.
 
+## 21. Tests + root README refresh
+
+> **Documentation & QA pass on `v2/database-refactor`.** Expands automated coverage without changing `/api/**` response contracts.
+
+### 21.1 New Vitest suites (`backend/nodejs/tests/`)
+
+- **`auth.routes.test.js`** — `POST /api/auth/register` and `POST /api/auth/login` with **`users.repository` mocked** (no real writes): invalid payload, duplicate email, success paths, wrong password, unknown user.
+- **`api-not-found.test.js`** — `GET` an unknown `/api/...` path returns **404** via `notFoundMiddleware` + `errorHandlerMiddleware` (`success: false`, `message: "Route not found"`, `data: null`).
+- **`userDto.test.js`**, **`destinationDto.test.js`**, **`itineraryDto.test.js`** — unit tests for stable DTO helpers (`toUserDto`, `fixUrl`, `normalizeCategoryParam`, `flattenSelectedOptionDays`, `itineraryRowToDto`, …).
+
+### 21.2 Root `README.md`
+
+- **Cấu trúc thư mục** updated to reflect **`src/modules/**`**, **`shared/dto`**, **`admin/`**, **`tests/`**, and **`README_FIX_ALL.md`**.
+- **`#### Kiểm thử & lint`** under backend setup: `npm test` / `npm run lint`.
+- **Nhật ký §A** rewritten for the current module layout (replacing the old “flat `routes/*.routes.js` only” description).
+- Typo fix: `.env.example` link text (stray `**`).
+
+### 21.3 Verification
+
+- **`npm test`:** `Test Files 11 passed` / `Tests 37 passed` (baseline rises as suites grow).
+- **`npm run lint`:** clean on `src/` and `tests/`.
+
 ---
 
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*
