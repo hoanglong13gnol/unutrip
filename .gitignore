@@ -21,3 +21,12 @@ local.properties
 .env
 
 !.env.example
+
+# Node dependencies
+node_modules/
+backend/nodejs/node_modules/
+
+# Dependencies
+node_modules/
+**/node_modules/
+backend/nodejs/node_modules/

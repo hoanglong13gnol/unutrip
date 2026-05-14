@@ -48,10 +48,15 @@ export async function listNearbyDestinationsForUser({ userId, lat, lng, radiusKm
   });
 
   const rowsWithImages = await attachDestinationImages(rows);
-  return rowsWithImages.map((r) => ({
-    ...toDestinationDto(r, !!r.is_favorite),
-    distanceKm: Number(r.distance_km ?? 0)
-  }));
+  return rowsWithImages.map((r) => {
+    const raw = r.distance_km;
+    const n = raw == null || raw === "" ? NaN : Number(raw);
+    const distanceKm = Number.isFinite(n) && n >= 0 ? n : null;
+    return {
+      ...toDestinationDto(r, !!r.is_favorite),
+      distanceKm
+    };
+  });
 }
 
 export async function getDestinationDetail({ userId, id }) {

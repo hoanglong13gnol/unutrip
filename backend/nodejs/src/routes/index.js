@@ -1,4 +1,5 @@
 import express from "express";
+import { registerHealthRoutes } from "./health.routes.js";
 import { registerAuthRoutes } from "./auth.routes.js";
 import { registerUserRoutes } from "./users.routes.js";
 import { registerFavoriteRoutes } from "./favorites.routes.js";
@@ -9,6 +10,7 @@ import { registerAiRoutes } from "./ai.routes.js";
 
 export function buildRouter() {
   const router = express.Router();
+  registerHealthRoutes(router);
   registerAuthRoutes(router);
   registerUserRoutes(router);
   registerFavoriteRoutes(router);

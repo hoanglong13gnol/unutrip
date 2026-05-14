@@ -81,6 +81,18 @@ tokenizer, model, current_device = load_model()
 def root():
     return {"status": "online", "device": current_device, "model": "Qwen2.5-1.5B-LoRA"}
 
+
+@app.get("/chat")
+def chat_get_help():
+    """Mở http://127.0.0.1:8000/chat trên trình duyệt là GET — route thật là POST JSON."""
+    return {
+        "message": "Đây không phải trang web. Dùng POST JSON {\"message\": \"...\"} hoặc xem GET / .",
+        "post_url": "/chat",
+        "content_type": "application/json",
+        "example": 'curl -s http://127.0.0.1:8000/chat -H "Content-Type: application/json" -d "{\\"message\\":\\"Xin chào\\"}"',
+    }
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     print(f"[AI] Request: {req.message[:50]}...")

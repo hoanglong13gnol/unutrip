@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.gms.location.LocationServices
 import com.smarttravel.R
@@ -110,6 +111,12 @@ class HomeFragment : Fragment() {
         binding.rvFeatured.apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             adapter = featuredAdapter
+            itemAnimator = DefaultItemAnimator().apply {
+                addDuration = 220
+                changeDuration = 140
+                moveDuration = 200
+                removeDuration = 160
+            }
         }
 
         nearbyAdapter = DestinationAdapter(
@@ -144,6 +151,12 @@ class HomeFragment : Fragment() {
         binding.rvNearby.apply {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             adapter = nearbyAdapter
+            itemAnimator = DefaultItemAnimator().apply {
+                addDuration = 220
+                changeDuration = 140
+                moveDuration = 200
+                removeDuration = 160
+            }
         }
     }
 
@@ -261,21 +274,18 @@ class HomeFragment : Fragment() {
             cancellationTokenSource.token
         )
             .addOnSuccessListener { location ->
-                if (location == null) {
+                if (
+                    location == null ||
+                    isInvalidOrUnusableLocation(location.latitude, location.longitude)
+                ) {
                     Toast.makeText(
                         requireContext(),
-                        "GPS null, dùng vị trí mặc định ICTU",
-                        Toast.LENGTH_LONG
+                        "Không lấy được vị trí hợp lệ, dùng khu vực mặc định",
+                        Toast.LENGTH_SHORT
                     ).show()
                     loadNearbyFallback()
                     return@addOnSuccessListener
                 }
-
-                Toast.makeText(
-                    requireContext(),
-                    "GPS: ${location.latitude}, ${location.longitude}",
-                    Toast.LENGTH_LONG
-                ).show()
 
                 viewModel.loadNearby(
                     token = token,
@@ -298,12 +308,6 @@ class HomeFragment : Fragment() {
     private fun loadNearbyFallback() {
         val token = sessionManager.getBearerToken()
 
-        Toast.makeText(
-            requireContext(),
-            "Nearby fallback ICTU: 21.5878, 105.8069",
-            Toast.LENGTH_LONG
-        ).show()
-
         viewModel.loadNearby(
             token = token,
             lat = 21.5878,
@@ -311,6 +315,15 @@ class HomeFragment : Fragment() {
             radiusKm = 50,
             limit = 20
         )
+    }
+
+    /**
+     * FusedLocationProvider đôi khi trả (0,0) hoặc NaN trên emulator — Haversine sẽ không khớp địa điểm VN trong 50km.
+     */
+    private fun isInvalidOrUnusableLocation(lat: Double, lng: Double): Boolean {
+        if (!lat.isFinite() || !lng.isFinite()) return true
+        if (kotlin.math.abs(lat) < 1e-5 && kotlin.math.abs(lng) < 1e-5) return true
+        return false
     }
 
     private fun observeViewModel() {

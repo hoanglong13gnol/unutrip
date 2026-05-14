@@ -1,0 +1,31 @@
+name: RAG service
+
+on:
+  push:
+    paths:
+      - "backend/rag/**"
+      - ".github/workflows/rag-ci.yml"
+  pull_request:
+    paths:
+      - "backend/rag/**"
+      - ".github/workflows/rag-ci.yml"
+
+jobs:
+  rag:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/rag
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Import app
+        run: python -c "from app.main import app; print(app.title)"
+      - name: Verify artifacts (optional)
+        run: python scripts/verify_rag_artifacts.py --allow-missing || true
+      - name: Offline eval (smoke)
+        run: python scripts/eval_rag_retrieval.py --ci

@@ -1,0 +1,15 @@
+# Optional local Redis for UnuTrip RAG (rate limit + Gemini cache).
+# Usage: docker compose -f deploy/redis-compose.yml up -d
+# Then set REDIS_URL=redis://127.0.0.1:6379/0 in repo root .env
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - unutrip_redis_data:/data
+
+volumes:
+  unutrip_redis_data:

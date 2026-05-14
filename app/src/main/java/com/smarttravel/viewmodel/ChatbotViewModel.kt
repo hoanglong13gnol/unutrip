@@ -6,10 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smarttravel.data.model.ChatMessage
 import com.smarttravel.data.model.ChatbotResult
+import com.smarttravel.utils.ChatTripDayParser
 import com.smarttravel.utils.GeminiService
 import com.smarttravel.utils.RagService
 import kotlinx.coroutines.launch
-import java.text.Normalizer
 
 class ChatbotViewModel : ViewModel() {
 
@@ -66,7 +66,8 @@ class ChatbotViewModel : ViewModel() {
                 val aiMsg = ChatMessage(
                     role = "model",
                     content = finalResult.answer,
-                    places = finalResult.places
+                    places = finalResult.places,
+                    tripDaysHint = finalResult.tripDaysHint
                 )
 
                 conversationHistory.add(aiMsg)
@@ -172,7 +173,8 @@ class ChatbotViewModel : ViewModel() {
         if (!ragFailed && hardMismatch) {
             return ChatbotResult(
                 answer = "Mình chưa tìm được địa điểm phù hợp đúng với ${targetProvince ?: "khu vực bạn yêu cầu"} trong dữ liệu UnuTrip. Bạn thử nhập rõ hơn tên tỉnh/thành hoặc chọn khu vực khác nhé.",
-                places = emptyList()
+                places = emptyList(),
+                tripDaysHint = computeTripDaysHint(userText, tripDays)
             )
         }
 
@@ -212,22 +214,25 @@ class ChatbotViewModel : ViewModel() {
                 if (!ragFailed && secondMismatch) {
                     return ChatbotResult(
                         answer = "Mình chưa tìm được địa điểm phù hợp đúng với ${targetProvince ?: "khu vực bạn yêu cầu"} trong dữ liệu UnuTrip. Bạn thử nhập rõ hơn tên tỉnh/thành hoặc chọn khu vực khác nhé.",
-                        places = emptyList()
+                        places = emptyList(),
+                        tripDaysHint = computeTripDaysHint(userText, tripDays)
                     )
                 }
             } else if (!validation.valid) {
                 return ChatbotResult(
                     answer = "Mình chưa tìm được địa điểm phù hợp đúng với yêu cầu của bạn trong dữ liệu UnuTrip. Bạn thử nhập rõ hơn tên tỉnh/thành hoặc chọn khu vực khác nhé.",
-                    places = emptyList()
+                    places = emptyList(),
+                    tripDaysHint = computeTripDaysHint(userText, tripDays)
                 )
             }
         }
 
+        val tripHint = computeTripDaysHint(userText, tripDays)
         return if (ragFailed) {
             geminiService.fallbackChat(
                 token = token,
                 userMessage = userText
-            )
+            ).copy(tripDaysHint = tripHint)
         } else {
             geminiService.repairRagAnswer(
                 token = token,
@@ -239,8 +244,12 @@ class ChatbotViewModel : ViewModel() {
                 ragAnswer = ragResult.answer,
                 places = ragResult.places,
                 tripDays = tripDays
-            )
+            ).copy(tripDaysHint = tripHint)
         }
+    }
+
+    private fun computeTripDaysHint(userText: String, tripDays: Int?): Int? {
+        return (tripDays ?: extractTripDaysFromText(userText) ?: lastTripDays)?.coerceIn(1, 10)
     }
 
     private fun updateConversationContext(
@@ -303,14 +312,7 @@ class ChatbotViewModel : ViewModel() {
                 result.answer.isBlank()
     }
 
-    private fun normalizeVietnamese(text: String): String {
-        val temp = Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
-        return temp
-            .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
-            .replace("đ", "d")
-            .replace("\\s+".toRegex(), " ")
-            .trim()
-    }
+    private fun normalizeVietnamese(text: String): String = ChatTripDayParser.normalize(text)
 
     private fun extractProvinceFromText(text: String): String? {
         val normalized = normalizeVietnamese(text)
@@ -347,23 +349,7 @@ class ChatbotViewModel : ViewModel() {
         }?.value
     }
 
-    private fun extractTripDaysFromText(text: String): Int? {
-        val normalized = normalizeVietnamese(text)
-
-        val dayNightRegex = Regex("""(\d+)\s*ngay\s*(\d+)\s*dem""")
-        val dayNightMatch = dayNightRegex.find(normalized)
-        if (dayNightMatch != null) {
-            return dayNightMatch.groupValues[1].toIntOrNull()?.coerceIn(1, 10)
-        }
-
-        val dayRegex = Regex("""(\d+)\s*ngay""")
-        val dayMatch = dayRegex.find(normalized)
-        if (dayMatch != null) {
-            return dayMatch.groupValues[1].toIntOrNull()?.coerceIn(1, 10)
-        }
-
-        return null
-    }
+    private fun extractTripDaysFromText(text: String): Int? = ChatTripDayParser.extractTripDays(text)
 
     private fun isFollowUpTravelRequest(text: String): Boolean {
         val normalized = normalizeVietnamese(text)

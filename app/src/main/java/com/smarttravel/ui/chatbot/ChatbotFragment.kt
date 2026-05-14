@@ -7,16 +7,16 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
+import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.gson.Gson
 import com.smarttravel.R
 import com.smarttravel.data.model.AIItineraryOption
-import com.smarttravel.data.model.AIItineraryOptionDay
 import com.smarttravel.data.model.AIRecommendedDestination
 import com.smarttravel.data.model.ChatMessage
 import com.smarttravel.databinding.FragmentChatbotBinding
+import com.smarttravel.utils.ChatTripDayParser
 import com.smarttravel.utils.SessionManager
 import com.smarttravel.viewmodel.ChatbotViewModel
 import java.time.LocalDate
@@ -26,7 +26,7 @@ class ChatbotFragment : Fragment() {
     private var _binding: FragmentChatbotBinding? = null
     private val binding get() = _binding!!
 
-    private lateinit var viewModel: ChatbotViewModel
+    private val viewModel: ChatbotViewModel by viewModels()
     private lateinit var adapter: ChatMessageAdapter
     private lateinit var sessionManager: SessionManager
     private var currentMessages: List<ChatMessage> = emptyList()
@@ -44,9 +44,8 @@ class ChatbotFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        sessionManager = SessionManager(requireContext())
+        sessionManager = SessionManager.getInstance(requireContext())
 
-        viewModel = ViewModelProvider(this)[ChatbotViewModel::class.java]
         viewModel.init(sessionManager.getToken() ?: "")
 
         setupAdapter()
@@ -142,44 +141,13 @@ class ChatbotFragment : Fragment() {
         }
     }
 
-    private fun extractTripDays(text: String): Int {
-        val normalized = text.lowercase()
-
-        val dayNightRegex = Regex("""(\d+)\s*ngày\s*(\d+)\s*đêm""")
-        val dayNightMatch = dayNightRegex.find(normalized)
-        if (dayNightMatch != null) {
-            return dayNightMatch.groupValues[1].toIntOrNull()?.coerceIn(1, 10) ?: 1
-        }
-
-        val dayRegex = Regex("""(\d+)\s*ngày""")
-        val dayMatch = dayRegex.find(normalized)
-        if (dayMatch != null) {
-            return dayMatch.groupValues[1].toIntOrNull()?.coerceIn(1, 10) ?: 1
-        }
-
-        return 1
-    }
-
-    private fun splitItemsByDays(
-        items: List<AIRecommendedDestination>,
-        totalDays: Int
-    ): List<AIItineraryOptionDay> {
-        val safeTotalDays = totalDays.coerceAtLeast(1)
-
-        return (1..safeTotalDays).map { dayNumber ->
-            val dayItems = items
-                .filterIndexed { index, _ ->
-                    index % safeTotalDays == dayNumber - 1
-                }
-                .map { item ->
-                    item.copy(recommendedDay = dayNumber)
-                }
-
-            AIItineraryOptionDay(
-                dayNumber = dayNumber,
-                items = dayItems
-            )
-        }.filter { it.items.isNotEmpty() }
+    /** Số ngày: ưu tiên hint từ ViewModel (đồng bộ RAG), sau đó câu user, rồi nội dung bot. */
+    private fun resolveTripDayCount(message: ChatMessage): Int {
+        val fromHint = message.tripDaysHint?.takeIf { it > 0 }
+        val prev = getPreviousUserMessage(message)
+        val fromUser = ChatTripDayParser.extractTripDays(prev)
+        val fromBot = ChatTripDayParser.extractTripDays(message.content)
+        return (fromHint ?: fromUser ?: fromBot)?.coerceIn(1, 10) ?: 1
     }
 
     private fun getPreviousUserMessage(botMessage: ChatMessage): String {
@@ -214,8 +182,7 @@ class ChatbotFragment : Fragment() {
             return
         }
 
-        val previousUserMessage = getPreviousUserMessage(message)
-        val totalDays = extractTripDays(previousUserMessage)
+        val totalDays = resolveTripDayCount(message)
 
         val today = LocalDate.now()
         val endDate = today.plusDays((totalDays - 1).toLong())
@@ -237,16 +204,16 @@ class ChatbotFragment : Fragment() {
             )
         }
 
-        val days = splitItemsByDays(
+        val days = ChatTripDayParser.splitDestinationsAcrossDays(
             items = items,
             totalDays = totalDays
         )
 
         val option = AIItineraryOption(
             optionId = "chatbot",
-            title = "Lịch trình từ chatbot",
+            title = "Lịch trình từ chatbot ($totalDays ngày)",
             theme = "chatbot",
-            summary = "Bạn có thể bỏ bớt địa điểm chưa thích trước khi tạo lịch trình.",
+            summary = "Gợi ý theo tin nhắn của bạn ($totalDays ngày). Có thể chỉnh sửa trước khi lưu.",
             totalDays = totalDays,
             estimatedBudget = null,
             highlights = validPlaces.mapNotNull { it.name }.take(5),

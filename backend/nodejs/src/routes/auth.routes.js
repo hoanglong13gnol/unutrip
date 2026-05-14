@@ -6,8 +6,6 @@ import { toUserDto } from "./helpers.js";
 import * as usersRepository from "../repositories/users.repository.js";
 
 export function registerAuthRoutes(router) {
-  router.get("/health", (req, res) => res.json({ ok: true, name: "smarttravel-backend" }));
-
   router.post("/auth/register", async (req, res) => {
     const schema = z.object({
       fullName: z.string().min(1),

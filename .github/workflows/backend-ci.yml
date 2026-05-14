@@ -1,0 +1,56 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/rag/**"
+      - "backend/nodejs/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/rag/**"
+      - "backend/nodejs/**"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  rag-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/rag
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/rag/requirements.txt
+            backend/rag/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run pytest
+        run: python -m pytest tests/ -q
+
+  node-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/nodejs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/nodejs/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Prettier (scoped)
+        run: npm run format:check
+      - name: Unit tests
+        run: npm test
+      - name: Syntax check
+        run: node --check src/index.js

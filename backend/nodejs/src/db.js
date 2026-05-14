@@ -7,11 +7,13 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// backend/nodejs/src/db.js -> E:/UNUtrip/.env
+// backend/nodejs/src/db.js -> repo root `.env`
 const envPath = path.resolve(__dirname, "../../../.env");
+const isProduction = process.env.NODE_ENV === "production";
 
-console.log("[DB_ENV] expected env path:", envPath);
-console.log("[DB_ENV] env exists:", fs.existsSync(envPath));
+if (!isProduction) {
+  console.log("[DB_ENV] dotenv path exists:", fs.existsSync(envPath));
+}
 
 const envResult = dotenv.config({
   path: envPath,
@@ -20,8 +22,9 @@ const envResult = dotenv.config({
 
 if (envResult.error) {
   console.error("[DB_ENV] dotenv error:", envResult.error);
-} else {
-  console.log("[DB_ENV] dotenv loaded keys:", Object.keys(envResult.parsed || {}).join(", "));
+} else if (!isProduction) {
+  const n = Object.keys(envResult.parsed || {}).length;
+  console.log("[DB_ENV] dotenv loaded variable count:", n);
 }
 
 const selectedDatabase = process.env.DB_NAME || "unudata";
@@ -45,8 +48,12 @@ const dbConfig = {
   keepAliveInitialDelay: 0
 };
 
-console.log("[DB] Using database:", dbConfig.database);
-console.log("[DB] Host:", dbConfig.host, "Port:", dbConfig.port, "User:", dbConfig.user);
+if (isProduction) {
+  console.log("[DB] MySQL pool ready (database=%s)", dbConfig.database);
+} else {
+  console.log("[DB] Using database:", dbConfig.database);
+  console.log("[DB] Host:", dbConfig.host, "Port:", dbConfig.port, "User:", dbConfig.user);
+}
 
 export const pool = mysql.createPool(dbConfig);
 

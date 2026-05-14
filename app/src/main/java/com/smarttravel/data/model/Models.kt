@@ -63,6 +63,7 @@ data class Destination(
     val entryFee: Double?,
     val tags: List<String>,
     var isFavorite: Boolean = false,
+    @SerializedName(value = "distanceKm", alternate = ["distance_km"])
     val distanceKm: Double? = null
 )
 
@@ -201,7 +202,9 @@ data class AIItineraryPreviewRequest(
     @SerializedName("endDate") val endDate: String,
     @SerializedName("budget") val budget: Double?,
     @SerializedName("preferences") val preferences: List<String>,
-    @SerializedName("province") val province: String? = null
+    @SerializedName("province") val province: String? = null,
+    /** Gửi cùng câu / truy vấn như chatbot để retrieve RAG khớp luồng chat (tùy chọn). */
+    @SerializedName("contextQuery") val contextQuery: String? = null
 )
 
 data class AIItineraryPreviewResponse(
@@ -304,7 +307,9 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val places: List<ChatPlace> = emptyList()
+    val places: List<ChatPlace> = emptyList(),
+    /** Số ngày đã dùng cho RAG (ưu tiên khi tạo lịch từ tin nhắn bot). */
+    val tripDaysHint: Int? = null
 )
 
 data class ChatRequest(
@@ -322,7 +327,7 @@ data class ChatResponse(
 )
 
 data class ChatPlace(
-    @SerializedName("place_id")
+    @SerializedName(value = "place_id", alternate = ["rawPlaceId", "placeId", "raw_place_id"])
     val rawPlaceId: String? = null,
 
     val name: String? = null,
@@ -350,7 +355,8 @@ data class GeminiRagValidation(
 
 data class ChatbotResult(
     val answer: String,
-    val places: List<ChatPlace> = emptyList()
+    val places: List<ChatPlace> = emptyList(),
+    val tripDaysHint: Int? = null
 )
 
 // ==================== WEATHER ====================

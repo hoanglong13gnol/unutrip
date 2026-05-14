@@ -2,6 +2,8 @@ package com.smarttravel.data.repository
 
 import android.util.Log
 import com.smarttravel.data.api.ApiService
+import retrofit2.Response
+import com.smarttravel.data.api.parseErrorMessageOrNull
 import com.smarttravel.data.model.*
 import com.smarttravel.utils.Resource
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -17,7 +19,10 @@ class AuthRepository(private val api: ApiService) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error(response.message() ?: "Đăng nhập thất bại")
+                val detail = response.parseErrorMessageOrNull()
+                    ?: response.message()
+                    ?: "Đăng nhập thất bại"
+                Resource.Error(detail)
             }
         } catch (e: Exception) {
             Resource.Error("Lỗi kết nối: ${e.message}")
@@ -35,7 +40,10 @@ class AuthRepository(private val api: ApiService) {
             if (response.isSuccessful && response.body() != null) {
                 Resource.Success(response.body()!!)
             } else {
-                Resource.Error(response.message() ?: "Đăng ký thất bại")
+                val detail = response.parseErrorMessageOrNull()
+                    ?: response.message()
+                    ?: "Đăng ký thất bại"
+                Resource.Error(detail)
             }
         } catch (e: Exception) {
             Resource.Error("Lỗi kết nối: ${e.message}")
@@ -102,22 +110,77 @@ class DestinationRepository(private val api: ApiService) {
         limit: Int = 20
     ): Resource<List<Destination>> {
         return try {
-            val response = api.getNearbyDestinations(
-                token = token,
-                lat = lat,
-                lng = lng,
-                radiusKm = radiusKm,
-                limit = limit
-            )
+            suspend fun fetch(radius: Int): Response<DestinationResponse> =
+                api.getNearbyDestinations(
+                    token = token,
+                    lat = lat,
+                    lng = lng,
+                    radiusKm = radius,
+                    limit = limit,
+                )
 
-            if (response.isSuccessful && response.body() != null) {
-                Resource.Success(response.body()!!.data)
-            } else {
-                Resource.Error("Không thể tải địa điểm gần đây")
+            var response = fetch(radiusKm)
+            if (!response.isSuccessful || response.body() == null) {
+                return Resource.Error("Không thể tải địa điểm gần đây")
             }
+            var data = response.body()!!.data
+            if (data.isNotEmpty()) {
+                return Resource.Success(sortDestinationsNearestFirst(data))
+            }
+
+            val widerRadii = listOf(120, 200, 350, 600, 1000, 2000, 4000).filter { it > radiusKm }
+            for (r in widerRadii) {
+                response = fetch(r)
+                if (response.isSuccessful && response.body() != null) {
+                    data = response.body()!!.data
+                    if (data.isNotEmpty()) {
+                        return Resource.Success(sortDestinationsNearestFirst(data))
+                    }
+                }
+            }
+
+            val featured = api.getFeaturedDestinations(token)
+            if (featured.isSuccessful && featured.body() != null) {
+                val featuredData = featured.body()!!.data
+                if (featuredData.isNotEmpty()) {
+                    return Resource.Success(sortDestinationsNearestFirst(featuredData.take(limit)))
+                }
+            }
+
+            val listResp = api.getDestinations(token, page = 1, limit = limit, null, null, null)
+            if (listResp.isSuccessful && listResp.body() != null) {
+                return Resource.Success(sortDestinationsNearestFirst(listResp.body()!!.data))
+            }
+
+            Resource.Success(emptyList())
         } catch (e: Exception) {
+            Log.e("DestinationRepo", "getNearby error: ", e)
             Resource.Error("Lỗi kết nối: ${e.message}")
         }
+    }
+
+    /**
+     * Gần nhất trước; nếu không có [Destination.distanceKm] hợp lệ thì gợi ý theo rating.
+     */
+    private fun sortDestinationsNearestFirst(destinations: List<Destination>): List<Destination> {
+        if (destinations.isEmpty()) return destinations
+        val hasUsableDistance = destinations.any { d ->
+            val km = d.distanceKm
+            km != null && km > 0.0 && km.isFinite()
+        }
+        if (!hasUsableDistance) {
+            return destinations.sortedWith(
+                compareByDescending<Destination> { it.rating }.thenBy { it.id },
+            )
+        }
+        return destinations.sortedWith(
+            compareBy<Destination> { d ->
+                val km = d.distanceKm
+                if (km == null || km <= 0.0 || !km.isFinite()) Double.POSITIVE_INFINITY else km
+            }
+                .thenByDescending { it.rating }
+                .thenBy { it.id },
+        )
     }
 
     suspend fun toggleFavorite(token: String, destinationId: Int, isFav: Boolean): Resource<Unit> {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Không sao lưu token/session lên Google Backup / chuyển thiết bị -->
+    <exclude domain="sharedpref" path="SmartTravelSession_secure.xml" />
+    <exclude domain="sharedpref" path="SmartTravelSession.xml" />
+</full-backup-content>

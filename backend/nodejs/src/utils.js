@@ -1,9 +1,17 @@
-export function apiOk(data, message = "OK") {
-  return { success: true, message, data };
-}
+import { randomUUID } from "node:crypto";
 
-export function apiFail(message = "Error", status = 400, data = null) {
-  return { status, body: { success: false, message, data } };
+export { apiOk, apiFail } from "./shared/http/response.js";
+
+/**
+ * @param {import("http").IncomingHttpHeaders} headers
+ * @returns {{ requestId: string, traceHeaders: Record<string, string> }}
+ */
+export function resolveRequestTrace(headers) {
+  const raw = headers["x-request-id"];
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  const trimmed = typeof first === "string" ? first.trim().slice(0, 128) : "";
+  const requestId = trimmed.length > 0 ? trimmed : randomUUID();
+  return { requestId, traceHeaders: { "X-Request-ID": requestId } };
 }
 
 export function parseJsonArray(value, fallback = []) {

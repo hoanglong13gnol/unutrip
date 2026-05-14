@@ -1,22 +1,22 @@
-import { ragJsonHeaders, ragUrl } from "../config/ragClient.js";
+import { AI_MODEL_FETCH_TIMEOUT_MS, getResolvedAiModelUrl } from "../config/env.js";
+import { ragPostJson } from "../lib/ragUpstream.js";
+import { fetchWithTimeout } from "../lib/httpFetch.js";
+import { normalizeRagChatSimpleResponse } from "../schemas/ragContract.js";
 import { parseJsonArray } from "../utils.js";
 import * as aiRepository from "../repositories/ai.repository.js";
 
 /**
  * Proxies itinerary preview to RAG. Does not send HTTP responses.
  * @param {object} payload — JSON body (title, description, startDate, endDate, budget, preferences, province)
+ * @param {Record<string, string>} [traceHeaders] — forwarded to FastAPI (e.g. X-Request-ID)
  * @returns {Promise<{ ok: true, data: object } | { ok: false, status: 502, data: object }>}
  */
-export async function requestItineraryPreview(payload) {
-  const ragResult = await fetch(ragUrl("/ai/itinerary-preview"), {
-    method: "POST",
-    headers: ragJsonHeaders(),
-    body: JSON.stringify(payload)
-  });
+export async function requestItineraryPreview(payload, traceHeaders = {}) {
+  const r = await ragPostJson("/ai/itinerary-preview", payload, traceHeaders);
+  const data =
+    r.data && typeof r.data === "object" ? r.data : { detail: r.rawText, error: r.error };
 
-  const data = await ragResult.json();
-
-  if (!ragResult.ok || data.success === false) {
+  if (!r.ok || data.success === false) {
     return { ok: false, status: 502, data };
   }
 
@@ -26,25 +26,14 @@ export async function requestItineraryPreview(payload) {
 /**
  * Proxies itinerary options to RAG. Does not send HTTP responses.
  * @param {object} payload — JSON body (preferences should already be an array when required)
+ * @param {Record<string, string>} [traceHeaders] — forwarded to FastAPI (e.g. X-Request-ID)
  * @returns {Promise<{ ok: true, data: object | null } | { ok: false, status: 502, data: object | null }>}
  */
-export async function requestItineraryOptions(payload) {
-  const ragResult = await fetch(ragUrl("/ai/itinerary-options"), {
-    method: "POST",
-    headers: ragJsonHeaders(),
-    body: JSON.stringify(payload)
-  });
+export async function requestItineraryOptions(payload, traceHeaders = {}) {
+  const r = await ragPostJson("/ai/itinerary-options", payload, traceHeaders);
+  const data = r.data && typeof r.data === "object" ? r.data : { raw: r.rawText, error: r.error };
 
-  const text = await ragResult.text();
-
-  let data;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
-  }
-
-  if (!ragResult.ok || data?.success === false) {
+  if (!r.ok || data?.success === false) {
     return { ok: false, status: 502, data };
   }
 
@@ -55,25 +44,24 @@ export async function requestItineraryOptions(payload) {
  * Proxies simple RAG chat. Caller supplies coerced body fields. Does not send HTTP responses.
  * Network errors propagate to the route catch.
  * @param {{ message: string, top_k: number, mode: string, targetProvince: string | null, targetCity: string | null }} payload
+ * @param {Record<string, string>} [traceHeaders] — e.g. { "X-Request-ID": "..." } forwarded to FastAPI
  * @returns {Promise<{ ragOk: boolean, data: object | null }>}
  */
-export async function requestRagChatSimple(payload) {
-  const ragResponse = await fetch(ragUrl("/rag/chat/simple"), {
-    method: "POST",
-    headers: ragJsonHeaders(),
-    body: JSON.stringify(payload)
-  });
-
-  const text = await ragResponse.text();
-
-  let data;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = { raw: text };
+export async function requestRagChatSimple(payload, traceHeaders = {}) {
+  const r = await ragPostJson("/rag/chat/simple", payload, traceHeaders);
+  if (!r.ok) {
+    return {
+      ragOk: false,
+      data: r.data && typeof r.data === "object" ? r.data : { raw: r.rawText, error: r.error }
+    };
   }
 
-  return { ragOk: ragResponse.ok, data };
+  const raw = r.data && typeof r.data === "object" ? r.data : {};
+  const norm = normalizeRagChatSimpleResponse(raw);
+  if (!norm.ok && norm.issues.length) {
+    console.warn("[rag-contract] /rag/chat/simple:", norm.issues.join("; "));
+  }
+  return { ragOk: true, data: norm.data };
 }
 
 /**
@@ -82,61 +70,64 @@ export async function requestRagChatSimple(payload) {
  * @returns {Promise<{ answer: unknown }>}
  */
 export async function requestLocalAiChatAnswer({ aiUrl, message }) {
-  const aiRes = await fetch(aiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message })
-  });
+  const aiRes = await fetchWithTimeout(
+    aiUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    },
+    AI_MODEL_FETCH_TIMEOUT_MS
+  );
   const data = await aiRes.json();
   return { answer: data.answer };
 }
 
 /**
  * RAG fallback for /ai/chat only: json() parse (not text+parse). Fetch errors propagate.
- * @param {{ message: string }} params
+ * @param {{ message: string, traceHeaders?: Record<string, string> }} params
  * @returns {Promise<
  *   | { ok: true, answer: string }
  *   | { ok: false, reason: "invalid_json" }
  *   | { ok: false, reason: "upstream", message: string }
  * >}
  */
-export async function requestRagChatFallbackForAiChat({ message }) {
-  const ragRes = await fetch(ragUrl("/rag/chat/simple"), {
-    method: "POST",
-    headers: ragJsonHeaders(),
-    body: JSON.stringify({
+export async function requestRagChatFallbackForAiChat({ message, traceHeaders = {} }) {
+  const r = await ragPostJson(
+    "/rag/chat/simple",
+    {
       message,
       top_k: 6,
       mode: "balanced"
-    })
-  });
+    },
+    traceHeaders
+  );
 
-  let ragData = {};
-  try {
-    ragData = await ragRes.json();
-  } catch {
+  const ragData = r.data && typeof r.data === "object" ? r.data : null;
+  if (!ragData) {
     return { ok: false, reason: "invalid_json" };
   }
 
-  if (!ragRes.ok) {
+  if (!r.ok) {
     return {
       ok: false,
       reason: "upstream",
-      message:
-        typeof ragData?.detail === "string"
-          ? ragData.detail
-          : "AI / RAG không khả dụng"
+      message: typeof ragData?.detail === "string" ? ragData.detail : "AI / RAG không khả dụng"
     };
   }
 
-  return { ok: true, answer: ragData.answer ?? "" };
+  const norm = normalizeRagChatSimpleResponse(ragData);
+  if (!norm.ok && norm.issues.length) {
+    console.warn("[rag-contract] /rag/chat/simple (fallback):", norm.issues.join("; "));
+  }
+  return { ok: true, answer: norm.data.answer ?? "" };
 }
 
 /**
  * /ai/suggest-itinerary model pipeline: catalog → prompt → local AI → RAG fallback → strip → parse.
  * Throws on local/RAG failures (route outer catch). Returns invalid_ai_json on JSON.parse failure.
  *
- * @param {{ preferences: string[], startDate: string, endDate: string, budget: number | null | undefined, totalDays: number, userId: number }} params
+ * @param {{ preferences: string[], startDate: string, endDate: string, budget: number | null | undefined, totalDays: number, userId: number, traceHeaders?: Record<string, string> }} params
  * @returns {Promise<{ ok: true, aiResult: object } | { ok: false, reason: "invalid_ai_json", raw: string, error: unknown }>}
  */
 export async function generateSuggestItineraryAiResult({
@@ -145,7 +136,8 @@ export async function generateSuggestItineraryAiResult({
   endDate: _endDate,
   budget,
   totalDays,
-  userId
+  userId,
+  traceHeaders = {}
 }) {
   const all = await aiRepository.listDestinationsForAiSuggestion();
   const destinationsInfo = all.map((d) => ({
@@ -175,46 +167,54 @@ YÊU CẦU: Trả về JSON đúng cấu trúc:
   ]
 }`;
 
-  const aiUrl = process.env.AI_MODEL_URL || "http://127.0.0.1:8000/chat";
+  const aiUrl = getResolvedAiModelUrl();
 
   let responseText = "";
-  try {
-    console.log(`[AI] Generating itinerary for user ${userId}...`);
-    const aiRes = await fetch(aiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: prompt })
-    });
-    const aiData = await aiRes.json();
-    responseText = aiData.answer;
-    console.log(`[AI] Local AI response received (${responseText.length} chars)`);
-  } catch (err) {
-    console.warn("Local AI failed, falling back to RAG:", err.message);
-    const ragRes = await fetch(ragUrl("/rag/chat"), {
-      method: "POST",
-      headers: ragJsonHeaders(),
-      body: JSON.stringify({
+  if (aiUrl) {
+    try {
+      console.log(`[AI] Generating itinerary for user ${userId}...`);
+      const aiRes = await fetchWithTimeout(
+        aiUrl,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: prompt })
+        },
+        AI_MODEL_FETCH_TIMEOUT_MS
+      );
+      const aiData = await aiRes.json();
+      responseText = typeof aiData.answer === "string" ? aiData.answer : "";
+      console.log(`[AI] Local AI response received (${responseText.length} chars)`);
+    } catch (err) {
+      console.warn("Local AI failed, falling back to RAG:", err.message);
+    }
+  }
+
+  if (!responseText.trim()) {
+    const r = await ragPostJson(
+      "/rag/chat",
+      {
         message: `${prompt}\nCHỈ TRẢ VỀ JSON.`,
         top_k: 8,
         mode: "balanced",
         include_prompt: false
-      })
-    });
-    let ragData = {};
-    try {
-      ragData = await ragRes.json();
-    } catch {
+      },
+      traceHeaders
+    );
+
+    const ragData = r.data && typeof r.data === "object" ? r.data : null;
+    if (!ragData) {
       throw new Error("RAG trả về không phải JSON.");
     }
-    if (!ragRes.ok) {
+    if (!r.ok) {
       const detail = ragData?.detail ?? ragData?.error;
       throw new Error(
         typeof detail === "string" ? detail : "RAG không khả dụng hoặc từ chối yêu cầu."
       );
     }
     responseText = ragData.answer ?? "";
-    if (!responseText) throw new Error("RAG trả về rỗng.");
-    console.log(`[AI] RAG fallback response received (${responseText.length} chars)`);
+    if (!responseText.trim()) throw new Error("RAG trả về rỗng.");
+    console.log(`[AI] RAG response received (${responseText.length} chars)`);
   }
 
   console.log("[AI] Raw Response Text:", responseText);

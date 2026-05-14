@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { getResolvedAiModelUrl } from "../config/env.js";
 import { db } from "../db.js";
 import { authMiddleware } from "../auth.js";
-import { daysBetweenInclusive, toIsoDate } from "../utils.js";
+import { daysBetweenInclusive, toIsoDate, resolveRequestTrace } from "../utils.js";
 import {
   generateSuggestItineraryAiResult,
   requestItineraryOptions,
@@ -27,6 +28,9 @@ export function registerAiRoutes(router) {
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ success: false, message: "Invalid payload" });
 
+    const { requestId, traceHeaders } = resolveRequestTrace(req.headers);
+    res.setHeader("X-Request-ID", requestId);
+
     const { preferences, startDate, endDate, budget } = parsed.data;
     const totalDays = daysBetweenInclusive(startDate, endDate);
 
@@ -37,7 +41,8 @@ export function registerAiRoutes(router) {
         endDate,
         budget,
         totalDays,
-        userId: req.user.userId
+        userId: req.user.userId,
+        traceHeaders
       });
 
       if (!genResult.ok && genResult.reason === "invalid_ai_json") {
@@ -134,30 +139,40 @@ export function registerAiRoutes(router) {
     }
   });
 
-  router.post("/ai/rag-chat", async (req, res) => {
-    try {
-      const message = String(req.body?.message || "").trim();
-      const topK = Number(req.body?.top_k || 6);
-      const mode = String(req.body?.mode || "balanced");
+  router.post("/ai/rag-chat", authMiddleware, async (req, res) => {
+    const ragChatSchema = z.object({
+      message: z.string().trim().min(1).max(8000),
+      top_k: z.coerce.number().int().min(1).max(10).optional(),
+      mode: z.string().trim().max(64).optional(),
+      targetProvince: z.string().trim().max(128).nullable().optional(),
+      targetCity: z.string().trim().max(128).nullable().optional()
+    });
 
-      const targetProvince = req.body?.targetProvince ? String(req.body.targetProvince).trim() : null;
-
-      const targetCity = req.body?.targetCity ? String(req.body.targetCity).trim() : null;
-
-      if (!message) {
-        return res.status(400).json({
-          success: false,
-          message: "Thiếu message"
-        });
-      }
-
-      const { ragOk, data } = await requestRagChatSimple({
-        message,
-        top_k: topK,
-        mode,
-        targetProvince,
-        targetCity
+    const parsed = ragChatSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        message: "Payload không hợp lệ",
+        errors: parsed.error.flatten()
       });
+    }
+
+    const { requestId, traceHeaders } = resolveRequestTrace(req.headers);
+    res.setHeader("X-Request-ID", requestId);
+
+    try {
+      const { message, top_k: topK = 6, mode = "balanced", targetProvince, targetCity } = parsed.data;
+
+      const { ragOk, data } = await requestRagChatSimple(
+        {
+          message,
+          top_k: topK,
+          mode,
+          targetProvince: targetProvince ?? null,
+          targetCity: targetCity ?? null
+        },
+        traceHeaders
+      );
 
       if (!ragOk) {
         return res.status(502).json({
@@ -193,29 +208,35 @@ export function registerAiRoutes(router) {
     try {
       const message = String(req.body?.message ?? "");
       console.log(`[AI] Chat Request: "${message.substring(0, 50)}..."`);
-      const aiUrl = process.env.AI_MODEL_URL || "http://localhost:8000/chat";
+      const aiUrl = getResolvedAiModelUrl();
 
-      try {
-        const { answer } = await requestLocalAiChatAnswer({ aiUrl, message });
-        return res.json({ success: true, answer });
-      } catch (err) {
-        console.warn("Local AI failed, fallback to RAG:", err.message);
-        const result = await requestRagChatFallbackForAiChat({ message });
+      const { requestId, traceHeaders } = resolveRequestTrace(req.headers);
+      res.setHeader("X-Request-ID", requestId);
 
-        if (!result.ok && result.reason === "invalid_json") {
-          return res.status(502).json({
-            success: false,
-            message: "RAG trả về không hợp lệ"
-          });
+      if (aiUrl) {
+        try {
+          const { answer } = await requestLocalAiChatAnswer({ aiUrl, message });
+          return res.json({ success: true, answer });
+        } catch (err) {
+          console.warn("Local AI failed, fallback to RAG:", err.message);
         }
-        if (!result.ok && result.reason === "upstream") {
-          return res.status(502).json({
-            success: false,
-            message: result.message
-          });
-        }
-        return res.json({ success: true, answer: result.answer });
       }
+
+      const result = await requestRagChatFallbackForAiChat({ message, traceHeaders });
+
+      if (!result.ok && result.reason === "invalid_json") {
+        return res.status(502).json({
+          success: false,
+          message: "RAG trả về không hợp lệ"
+        });
+      }
+      if (!result.ok && result.reason === "upstream") {
+        return res.status(502).json({
+          success: false,
+          message: result.message
+        });
+      }
+      return res.json({ success: true, answer: result.answer });
     } catch (error) {
       return res.status(500).json({ success: false, message: error.message });
     }
@@ -223,17 +244,23 @@ export function registerAiRoutes(router) {
 
   router.post("/ai/itinerary-preview", authMiddleware, async (req, res) => {
     try {
+      const { requestId, traceHeaders } = resolveRequestTrace(req.headers);
+      res.setHeader("X-Request-ID", requestId);
+
       const { title, description, startDate, endDate, budget, preferences, province } = req.body;
 
-      const result = await requestItineraryPreview({
-        title,
-        description,
-        startDate,
-        endDate,
-        budget,
-        preferences,
-        province
-      });
+      const result = await requestItineraryPreview(
+        {
+          title,
+          description,
+          startDate,
+          endDate,
+          budget,
+          preferences,
+          province
+        },
+        traceHeaders
+      );
 
       if (!result.ok) {
         const { data } = result;
@@ -256,6 +283,9 @@ export function registerAiRoutes(router) {
 
   router.post("/ai/itinerary-options", authMiddleware, async (req, res) => {
     try {
+      const { requestId, traceHeaders } = resolveRequestTrace(req.headers);
+      res.setHeader("X-Request-ID", requestId);
+
       const { title, description, startDate, endDate, budget, preferences, province } = req.body;
 
       if (!startDate || !endDate) {
@@ -266,15 +296,18 @@ export function registerAiRoutes(router) {
         });
       }
 
-      const result = await requestItineraryOptions({
-        title,
-        description,
-        startDate,
-        endDate,
-        budget,
-        preferences: Array.isArray(preferences) ? preferences : [],
-        province
-      });
+      const result = await requestItineraryOptions(
+        {
+          title,
+          description,
+          startDate,
+          endDate,
+          budget,
+          preferences: Array.isArray(preferences) ? preferences : [],
+          province
+        },
+        traceHeaders
+      );
 
       if (!result.ok) {
         const { data } = result;

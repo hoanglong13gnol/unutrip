@@ -14,13 +14,17 @@
             android:id="@+id/action_homeFragment_to_destinationDetailFragment"
             app:destination="@id/destinationDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
 
         <action
             android:id="@+id/action_homeFragment_to_homeDestinationListFragment"
             app:destination="@id/homeDestinationListFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Home Specific Sub-screens -->
@@ -36,7 +40,9 @@
             android:id="@+id/action_homeDestinationListFragment_to_destinationDetailFragment"
             app:destination="@id/destinationDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Destination List -->
@@ -59,7 +65,9 @@
             android:id="@+id/action_destinationListFragment_to_destinationDetailFragment"
             app:destination="@id/destinationDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Destination Detail -->
@@ -76,7 +84,9 @@
             android:id="@+id/action_destinationDetailFragment_to_mapFragment"
             app:destination="@id/mapFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Map -->
@@ -103,18 +113,26 @@
         android:label="Lịch trình">
         <action
             android:id="@+id/action_itineraryFragment_to_aiItineraryRequestFragment"
-            app:destination="@id/aiItineraryRequestFragment" />
+            app:destination="@id/aiItineraryRequestFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
         <action
             android:id="@+id/action_itineraryFragment_to_itineraryDetailFragment"
             app:destination="@id/itineraryDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
 
         <action
             android:id="@+id/action_itineraryFragment_to_aiSuggestFragment"
             app:destination="@id/aiSuggestFragment"
             app:enterAnim="@anim/slide_in_up"
-            app:exitAnim="@anim/slide_out_down" />
+            app:exitAnim="@anim/slide_out_down"
+            app:popEnterAnim="@anim/slide_in_down"
+            app:popExitAnim="@anim/slide_out_up" />
     </fragment>
 
     <!-- Itinerary Detail -->
@@ -131,7 +149,9 @@
             android:id="@+id/action_itineraryDetailFragment_to_destinationDetailFragment"
             app:destination="@id/destinationDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
     <fragment
         android:id="@+id/aiItineraryRequestFragment"
@@ -140,7 +160,11 @@
 
         <action
             android:id="@+id/action_aiItineraryRequestFragment_to_aiItineraryOptionsFragment"
-            app:destination="@id/aiItineraryOptionsFragment" />
+            app:destination="@id/aiItineraryOptionsFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
 
     </fragment>
     <fragment
@@ -150,7 +174,11 @@
 
         <action
             android:id="@+id/action_aiItineraryOptionsFragment_to_aiItineraryEditorFragment"
-            app:destination="@id/aiItineraryEditorFragment" />
+            app:destination="@id/aiItineraryEditorFragment"
+            app:enterAnim="@anim/slide_in_right"
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
 
     </fragment>
     <fragment
@@ -178,17 +206,23 @@
             android:id="@+id/action_profileFragment_to_settingsFragment"
             app:destination="@id/settingsFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
         <action
             android:id="@+id/action_profileFragment_to_profileFavoriteListFragment"
             app:destination="@id/profileFavoriteListFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
         <action
             android:id="@+id/action_profileFragment_to_profileItineraryListFragment"
             app:destination="@id/profileItineraryListFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Profile Specific Sub-screens -->
@@ -204,7 +238,9 @@
             android:id="@+id/action_profileFavoriteListFragment_to_destinationDetailFragment"
             app:destination="@id/destinationDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <fragment
@@ -215,7 +251,9 @@
             android:id="@+id/action_profileItineraryListFragment_to_itineraryDetailFragment"
             app:destination="@id/itineraryDetailFragment"
             app:enterAnim="@anim/slide_in_right"
-            app:exitAnim="@anim/slide_out_left" />
+            app:exitAnim="@anim/slide_out_left"
+            app:popEnterAnim="@anim/slide_in_left"
+            app:popExitAnim="@anim/slide_out_right" />
     </fragment>
 
     <!-- Settings -->

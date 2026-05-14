@@ -1,7 +1,13 @@
 import express from "express";
+import bcrypt from "bcryptjs";
 import { db } from "./db.js";
-import { RAG_BASE_URL } from "./config/env.js";
-import { ragAuthHeaders, ragJsonHeaders } from "./config/ragClient.js";
+import { getResolvedAiModelUrl, RAG_ADMIN_DEBUG_TIMEOUT_MS, RAG_BASE_URL } from "./config/env.js";
+import {
+  ragAdminJsonHeaders,
+  ragJsonHeaders,
+  ragUrl
+} from "./config/ragClient.js";
+import * as usersRepository from "./repositories/users.repository.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -12,14 +18,62 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+/** Giá trị hợp lệ cho cột enum `app_places.category` (migration v2). */
+const APP_PLACE_CATEGORY_ENUM = new Set([
+  "beach",
+  "checkin",
+  "city",
+  "culture",
+  "food",
+  "heritage",
+  "mountain",
+  "nature",
+  "religious",
+  "other"
+]);
+
+function normalizeAppPlaceCategory(category) {
+  const c = String(category || "")
+    .trim()
+    .toLowerCase();
+  if (!c) return "other";
+  if (c === "historical") return "heritage";
+  if (c === "entertainment") return "other";
+  if (APP_PLACE_CATEGORY_ENUM.has(c)) return c;
+  return "other";
+}
+
+function formatRagFetchError(error) {
+  const e = /** @type {Error & { cause?: { code?: string; errno?: string; syscall?: string; address?: string; port?: number } }} */ (
+    error
+  );
+  if (e.name === "AbortError") return "Timeout khi gọi FastAPI RAG";
+  const parts = [e.message || String(error)];
+  const c = e.cause;
+  if (c && typeof c === "object") {
+    if (c.code) parts.push(`code=${c.code}`);
+    if (c.errno != null) parts.push(`errno=${c.errno}`);
+    if (c.syscall) parts.push(`syscall=${c.syscall}`);
+    if (c.address != null || c.port != null) {
+      parts.push(`target=${c.address ?? "?"}:${c.port ?? "?"}`);
+    }
+  }
+  return parts.join(" | ");
+}
+
+function ragHeadersForPath(pathname) {
+  return pathname.startsWith("/admin/") ? ragAdminJsonHeaders() : ragJsonHeaders();
+}
+
 async function fetchRagJson(pathname, timeoutMs = 3000) {
+  const url = ragUrl(pathname);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${RAG_BASE_URL}${pathname}`, {
+    const response = await fetch(url, {
       signal: controller.signal,
-      headers: ragAuthHeaders()
+      headers: ragHeadersForPath(pathname)
     });
 
     const text = await response.text();
@@ -34,16 +88,16 @@ async function fetchRagJson(pathname, timeoutMs = 3000) {
     return {
       ok: response.ok,
       status: response.status,
-      url: `${RAG_BASE_URL}${pathname}`,
+      url,
       data
     };
   } catch (error) {
     return {
       ok: false,
       status: 0,
-      url: `${RAG_BASE_URL}${pathname}`,
+      url,
       data: {
-        error: error.name === "AbortError" ? "Timeout khi gọi FastAPI RAG" : error.message
+        error: formatRagFetchError(error)
       }
     };
   } finally {
@@ -51,13 +105,14 @@ async function fetchRagJson(pathname, timeoutMs = 3000) {
   }
 }
 async function postRagJson(pathname, body = {}, timeoutMs = 5000) {
+  const url = ragUrl(pathname);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${RAG_BASE_URL}${pathname}`, {
+    const response = await fetch(url, {
       method: "POST",
-      headers: ragJsonHeaders(),
+      headers: ragHeadersForPath(pathname),
       body: JSON.stringify(body),
       signal: controller.signal
     });
@@ -74,16 +129,16 @@ async function postRagJson(pathname, body = {}, timeoutMs = 5000) {
     return {
       ok: response.ok,
       status: response.status,
-      url: `${RAG_BASE_URL}${pathname}`,
+      url,
       data
     };
   } catch (error) {
     return {
       ok: false,
       status: 0,
-      url: `${RAG_BASE_URL}${pathname}`,
+      url,
       data: {
-        error: error.name === "AbortError" ? "Timeout khi gọi FastAPI RAG" : error.message
+        error: formatRagFetchError(error)
       }
     };
   } finally {
@@ -516,12 +571,45 @@ export function buildAdminRouter() {
   // 2. Quản lý Người dùng
   router.get("/users", async (req, res) => {
     try {
-      const users = await db.query("SELECT id, full_name, email, phone, created_at FROM users ORDER BY created_at DESC");
+      const rawQ = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const searchQ = escapeHtml(rawQ);
+
+      let users;
+      if (rawQ) {
+        const like = `%${rawQ}%`;
+        users = await db.query(
+          `SELECT id, full_name, email, phone, created_at FROM users
+           WHERE full_name LIKE ? OR email LIKE ? OR IFNULL(phone,'') LIKE ? OR CAST(id AS CHAR) LIKE ?
+           ORDER BY created_at DESC`,
+          [like, like, like, like]
+        );
+      } else {
+        users = await db.query(
+          "SELECT id, full_name, email, phone, created_at FROM users ORDER BY created_at DESC"
+        );
+      }
+
       const content = `
         <div class="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col overflow-hidden animate-fadeIn">
-            <div class="p-6 border-b border-gray-50 flex justify-between items-center bg-white">
-                <h3 class="text-lg font-bold text-gray-800">Danh sách Người dùng</h3>
-                <span class="bg-blue-100 text-blue-600 text-xs font-bold px-3 py-1 rounded-full uppercase">${users.length} thành viên</span>
+            <div class="p-6 border-b border-gray-50 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center bg-white">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Danh sách Người dùng</h3>
+                    <p class="text-xs text-gray-400 mt-1">Tìm theo họ tên, email, SĐT hoặc ID</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                    <form method="get" action="/admin/users" class="flex gap-2">
+                        <input type="search" name="q" value="${searchQ}" placeholder="Tìm kiếm..."
+                            class="min-w-[200px] flex-1 sm:flex-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        <button type="submit" class="bg-gray-100 text-gray-700 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-gray-200 transition uppercase">
+                            <i class="fas fa-search mr-1"></i> Tìm
+                        </button>
+                        ${rawQ ? `<a href="/admin/users" class="inline-flex items-center justify-center bg-white border border-gray-200 text-gray-600 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-gray-50 transition uppercase">Xóa lọc</a>` : ""}
+                    </form>
+                    <button type="button" onclick="showUserModal()" class="bg-blue-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-blue-700 transition uppercase shadow-lg shadow-blue-200 whitespace-nowrap">
+                        <i class="fas fa-plus mr-2"></i> Thêm người dùng
+                    </button>
+                </div>
+                <span class="bg-blue-100 text-blue-600 text-xs font-bold px-3 py-1 rounded-full uppercase self-start sm:self-auto">${users.length} kết quả</span>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -536,83 +624,328 @@ export function buildAdminRouter() {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
-                        ${users.map(u => `
+                        ${users.length === 0 ? `<tr><td colspan="6" class="px-8 py-12 text-center text-gray-400 text-sm">Không có người dùng phù hợp.</td></tr>` : ""}
+                        ${users
+                          .map(
+                            (u) => `
                             <tr class="hover:bg-blue-50/50 transition">
                                 <td class="px-8 py-4 text-gray-400 font-bold text-xs">${u.id}</td>
-                                <td class="px-8 py-4 font-semibold text-gray-700">${u.full_name}</td>
-                                <td class="px-8 py-4 text-gray-600 text-sm">${u.email}</td>
-                                <td class="px-8 py-4 text-gray-600 text-sm">${u.phone || '---'}</td>
-                                <td class="px-8 py-4 text-center text-xs font-bold text-gray-400">${new Date(u.created_at).toLocaleDateString('vi-VN')}</td>
+                                <td class="px-8 py-4 font-semibold text-gray-700">${escapeHtml(u.full_name)}</td>
+                                <td class="px-8 py-4 text-gray-600 text-sm">${escapeHtml(u.email)}</td>
+                                <td class="px-8 py-4 text-gray-600 text-sm">${escapeHtml(u.phone || "—")}</td>
+                                <td class="px-8 py-4 text-center text-xs font-bold text-gray-400">${new Date(u.created_at).toLocaleDateString("vi-VN")}</td>
                                 <td class="px-8 py-4 text-center">
-                                    <button onclick="deleteUser(${u.id})" class="text-red-400 hover:text-red-600 transition p-2">
-                                        <i class="fas fa-trash-can"></i>
-                                    </button>
+                                    <button type="button" onclick="showUserModal(${u.id})" class="text-blue-400 hover:text-blue-600 transition p-2 mr-1" title="Sửa"><i class="fas fa-edit"></i></button>
+                                    <button type="button" onclick="deleteUser(${u.id})" class="text-red-400 hover:text-red-600 transition p-2" title="Xóa"><i class="fas fa-trash-can"></i></button>
                                 </td>
                             </tr>
-                        `).join('')}
+                        `
+                          )
+                          .join("")}
                     </tbody>
                 </table>
             </div>
         </div>
+
+        <div id="userModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-fadeIn">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 id="userModalTitle" class="text-xl font-bold text-gray-800">Thêm người dùng</h3>
+                    <button type="button" onclick="closeUserModal()" class="text-gray-400 hover:text-gray-600 transition text-2xl leading-none">&times;</button>
+                </div>
+                <form id="userForm" class="p-8 overflow-y-auto custom-scrollbar space-y-5">
+                    <input type="hidden" name="id" id="userId">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Họ và tên</label>
+                        <input type="text" name="full_name" id="userFullName" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Email</label>
+                        <input type="email" name="email" id="userEmail" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Số điện thoại</label>
+                        <input type="text" name="phone" id="userPhone" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Tuỳ chọn">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Mật khẩu</label>
+                        <input type="password" name="password" id="userPassword" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Bắt buộc khi tạo mới">
+                        <p id="userPasswordHint" class="text-[11px] text-gray-400">Khi sửa: để trống nếu không đổi mật khẩu.</p>
+                    </div>
+                </form>
+                <div class="p-6 border-t border-gray-100 flex justify-end gap-3 bg-white">
+                    <button type="button" onclick="closeUserModal()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition">Huỷ</button>
+                    <button type="button" onclick="saveUser()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-lg shadow-blue-200">Lưu</button>
+                </div>
+            </div>
+        </div>
+
         <script>
+            function showUserModal(id) {
+                const modal = document.getElementById('userModal');
+                const form = document.getElementById('userForm');
+                const title = document.getElementById('userModalTitle');
+                const hint = document.getElementById('userPasswordHint');
+                form.reset();
+                document.getElementById('userId').value = '';
+                document.getElementById('userPassword').required = false;
+
+                if (id) {
+                    title.innerText = 'Sửa người dùng';
+                    hint.innerText = 'Để trống nếu không đổi mật khẩu.';
+                    fetch('/admin/users/api/' + id)
+                        .then(function(res) { return res.json(); })
+                        .then(function(data) {
+                            if (!data || !data.id || data.success === false) {
+                                alert(data && data.message ? data.message : 'Không tải được dữ liệu');
+                                return;
+                            }
+                            document.getElementById('userId').value = data.id;
+                            document.getElementById('userFullName').value = data.full_name || '';
+                            document.getElementById('userEmail').value = data.email || '';
+                            document.getElementById('userPhone').value = data.phone || '';
+                            document.getElementById('userPassword').value = '';
+                        })
+                        .catch(function() { alert('Lỗi mạng'); });
+                } else {
+                    title.innerText = 'Thêm người dùng';
+                    hint.innerText = 'Mật khẩu bắt buộc, tối thiểu 4 ký tự.';
+                    document.getElementById('userPassword').required = true;
+                }
+                modal.classList.remove('hidden');
+            }
+
+            function closeUserModal() {
+                document.getElementById('userModal').classList.add('hidden');
+            }
+
+            async function saveUser() {
+                const form = document.getElementById('userForm');
+                if (!form.checkValidity()) {
+                    form.reportValidity();
+                    return;
+                }
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData.entries());
+                const res = await fetch('/admin/users/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const body = await res.json().catch(function() { return {}; });
+                if (res.ok && body.success) {
+                    location.reload();
+                } else {
+                    alert(body.message || 'Lỗi khi lưu');
+                }
+            }
+
             async function deleteUser(id) {
-                if(confirm('Bạn có chắc chắn muốn xóa người dùng này?')) {
-                    const res = await fetch('/admin/users/delete/' + id, { method: 'POST' });
-                    if(res.ok) location.reload();
-                    else alert('Lỗi khi xóa người dùng');
+                if (!confirm('Bạn có chắc chắn muốn xóa người dùng này? Dữ liệu liên quan (yêu thích, đánh giá, lịch trình) có thể bị xóa theo chính sách CSDL.')) return;
+                const res = await fetch('/admin/users/delete/' + id, { method: 'POST' });
+                const body = await res.json().catch(function() { return {}; });
+                if (res.ok && body.success) {
+                    location.reload();
+                } else {
+                    alert(body.message || 'Lỗi khi xóa người dùng');
                 }
             }
         </script>
       `;
-      res.send(renderLayout(content, 'users', 'Quản lý Người dùng'));
-    } catch (e) { res.status(500).send(e.message); }
+      res.send(renderLayout(content, "users", "Quản lý Người dùng"));
+    } catch (e) {
+      res.status(500).send(e.message);
+    }
+  });
+
+  router.get("/users/api/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: "ID không hợp lệ" });
+      }
+      const user = await db.get(
+        "SELECT id, full_name, email, phone, avatar, preferences_json, created_at FROM users WHERE id = ?",
+        [id]
+      );
+      if (!user) return res.status(404).json({ success: false, message: "Không tìm thấy người dùng" });
+      return res.json(user);
+    } catch (e) {
+      return res.status(500).json({ success: false, message: e.message });
+    }
+  });
+
+  router.post("/users/save", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const idRaw = body.id;
+      const fullName = String(body.full_name || "").trim();
+      const email = String(body.email || "").trim().toLowerCase();
+      const phoneRaw = String(body.phone || "").trim();
+      const phone = phoneRaw || null;
+      const password = String(body.password || "").trim();
+
+      if (!fullName) {
+        return res.status(400).json({ success: false, message: "Họ tên không được để trống" });
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ success: false, message: "Email không hợp lệ" });
+      }
+
+      const idNum =
+        idRaw !== undefined && idRaw !== null && String(idRaw).trim() !== "" ? Number(idRaw) : NaN;
+
+      if (Number.isFinite(idNum) && idNum > 0) {
+        const dup = await usersRepository.getUserIdByEmailExcludingUser({ email, userId: idNum });
+        if (dup) {
+          return res.status(400).json({ success: false, message: "Email đã được dùng bởi tài khoản khác" });
+        }
+        if (password) {
+          if (password.length < 4) {
+            return res.status(400).json({ success: false, message: "Mật khẩu mới phải có ít nhất 4 ký tự" });
+          }
+          const passwordHash = bcrypt.hashSync(password, 10);
+          await usersRepository.adminUpdateUser({
+            userId: idNum,
+            fullName,
+            email,
+            phone,
+            passwordHash
+          });
+        } else {
+          await usersRepository.adminUpdateUser({
+            userId: idNum,
+            fullName,
+            email,
+            phone,
+            passwordHash: null
+          });
+        }
+        return res.json({ success: true });
+      }
+
+      const dup = await usersRepository.getUserIdByEmail(email);
+      if (dup) {
+        return res.status(400).json({ success: false, message: "Email đã tồn tại" });
+      }
+      if (!password || password.length < 4) {
+        return res.status(400).json({
+          success: false,
+          message: "Mật khẩu bắt buộc khi tạo mới và phải có ít nhất 4 ký tự"
+        });
+      }
+      const passwordHash = bcrypt.hashSync(password, 10);
+      await usersRepository.createUser({
+        fullName,
+        email,
+        passwordHash,
+        phone,
+        avatar: null,
+        preferencesJson: JSON.stringify([])
+      });
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ success: false, message: e.message });
+    }
   });
 
   router.post("/users/delete/:id", async (req, res) => {
-    await db.run("DELETE FROM users WHERE id = ?", [req.params.id]);
-    res.json({ success: true });
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: "ID không hợp lệ" });
+      }
+      await db.run("DELETE FROM users WHERE id = ?", [id]);
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: e.message || "Không xóa được (kiểm tra ràng buộc CSDL)."
+      });
+    }
   });
 
   // 3. Quản lý Địa điểm
   router.get("/destinations", async (req, res) => {
     try {
-      const dests = await db.query("SELECT id, name, city, category, rating FROM app_places ORDER BY id DESC");
+      const rawQ = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const searchQ = escapeHtml(rawQ);
+
+      let dests;
+      if (rawQ) {
+        const like = `%${rawQ}%`;
+        dests = await db.query(
+          `SELECT id, name, city, province, category, rating FROM app_places
+           WHERE name LIKE ? OR city LIKE ? OR IFNULL(province,'') LIKE ? OR IFNULL(address,'') LIKE ?
+             OR category LIKE ? OR CAST(id AS CHAR) LIKE ?
+           ORDER BY id DESC`,
+          [like, like, like, like, like, like]
+        );
+      } else {
+        dests = await db.query(
+          "SELECT id, name, city, province, category, rating FROM app_places ORDER BY id DESC"
+        );
+      }
+
       const content = `
         <div class="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col overflow-hidden animate-fadeIn">
-            <div class="p-6 border-b border-gray-50 flex justify-between items-center bg-white">
-                <h3 class="text-lg font-bold text-gray-800">Danh sách Địa điểm</h3>
-                <button onclick="showDestModal()" class="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg hover:bg-blue-700 transition uppercase shadow-lg shadow-blue-200">
-                    <i class="fas fa-plus mr-2"></i> Thêm mới
-                </button>
+            <div class="p-6 border-b border-gray-50 flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center bg-white">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Danh sách Địa điểm</h3>
+                    <p class="text-xs text-gray-400 mt-1">Tìm theo tên, thành phố, tỉnh, địa chỉ, danh mục hoặc ID</p>
+                </div>
+                <div class="flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center">
+                    <form method="get" action="/admin/destinations" class="flex flex-wrap gap-2 items-center">
+                        <input type="search" name="q" value="${searchQ}" placeholder="Tìm kiếm..."
+                            class="min-w-[180px] flex-1 sm:flex-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        <button type="submit" class="bg-gray-100 text-gray-700 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-gray-200 transition uppercase whitespace-nowrap">
+                            <i class="fas fa-search mr-1"></i> Tìm
+                        </button>
+                        ${rawQ ? `<a href="/admin/destinations" class="inline-flex items-center justify-center bg-white border border-gray-200 text-gray-600 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-gray-50 transition uppercase whitespace-nowrap">Xóa lọc</a>` : ""}
+                    </form>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <button type="button" onclick="showDestModal()" class="bg-blue-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-blue-700 transition uppercase shadow-lg shadow-blue-200 whitespace-nowrap">
+                            <i class="fas fa-plus mr-2"></i> Thêm mới
+                        </button>
+                    </div>
+                </div>
+                <span class="bg-blue-100 text-blue-600 text-xs font-bold px-3 py-1 rounded-full uppercase self-start lg:self-auto">${dests.length} địa điểm</span>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
                     <thead class="bg-gray-50 text-gray-500 text-[10px] font-bold uppercase tracking-widest">
                         <tr>
+                            <th class="px-8 py-4">ID</th>
                             <th class="px-8 py-4">Tên địa điểm</th>
                             <th class="px-8 py-4">Thành phố</th>
+                            <th class="px-8 py-4">Tỉnh</th>
                             <th class="px-8 py-4">Danh mục</th>
                             <th class="px-8 py-4 text-center">Đánh giá</th>
                             <th class="px-8 py-4 text-center">Thao tác</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
-                        ${dests.map(d => `
+                        ${dests.length === 0 ? `<tr><td colspan="7" class="px-8 py-12 text-center text-gray-400 text-sm">Không có địa điểm phù hợp.</td></tr>` : ""}
+                        ${dests
+                          .map(
+                            (d) => `
                             <tr class="hover:bg-blue-50/50 transition">
-                                <td class="px-8 py-4 font-bold text-gray-700">${d.name}</td>
-                                <td class="px-8 py-4 text-gray-600 text-sm">${d.city}</td>
-                                <td class="px-8 py-4 text-xs font-bold"><span class="bg-gray-100 px-2 py-1 rounded">${d.category}</span></td>
+                                <td class="px-8 py-4 text-gray-400 font-bold text-xs">${d.id}</td>
+                                <td class="px-8 py-4 font-bold text-gray-700">${escapeHtml(d.name)}</td>
+                                <td class="px-8 py-4 text-gray-600 text-sm">${escapeHtml(d.city || "—")}</td>
+                                <td class="px-8 py-4 text-gray-600 text-sm">${escapeHtml(d.province || "—")}</td>
+                                <td class="px-8 py-4 text-xs font-bold"><span class="bg-gray-100 px-2 py-1 rounded">${escapeHtml(d.category)}</span></td>
                                 <td class="px-8 py-4 text-center text-orange-500 font-bold text-sm">
-                                    <i class="fas fa-star mr-1"></i> ${d.rating}
+                                    <i class="fas fa-star mr-1"></i> ${d.rating != null ? Number(d.rating).toFixed(1) : "—"}
                                 </td>
                                 <td class="px-8 py-4 text-center">
-                                    <button onclick="showDestModal(${d.id})" class="text-blue-400 hover:text-blue-600 transition p-2 mr-2"><i class="fas fa-edit"></i></button>
-                                    <button onclick="deleteDest(${d.id})" class="text-red-400 hover:text-red-600 transition p-2">
-                                        <i class="fas fa-trash-can"></i>
-                                    </button>
+                                    <button type="button" onclick="showDestModal(${d.id})" class="text-blue-400 hover:text-blue-600 transition p-2 mr-1" title="Sửa"><i class="fas fa-edit"></i></button>
+                                    <button type="button" onclick="deleteDest(${d.id})" class="text-red-400 hover:text-red-600 transition p-2" title="Xóa"><i class="fas fa-trash-can"></i></button>
                                 </td>
                             </tr>
-                        `).join('')}
+                        `
+                          )
+                          .join("")}
                     </tbody>
                 </table>
             </div>
@@ -623,7 +956,7 @@ export function buildAdminRouter() {
             <div class="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-fadeIn">
                 <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                     <h3 id="modalTitle" class="text-xl font-bold text-gray-800">Thêm Địa điểm</h3>
-                    <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 transition text-2xl">&times;</button>
+                    <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-gray-600 transition text-2xl leading-none">&times;</button>
                 </div>
                 <form id="destForm" class="p-8 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-6">
                     <input type="hidden" name="id" id="destId">
@@ -640,13 +973,12 @@ export function buildAdminRouter() {
                             <option value="mountain">⛰️ Núi</option>
                             <option value="city">🏙️ Thành phố</option>
                             <option value="nature">🌿 Thiên nhiên</option>
-                            <option value="historical">🏛️ Lịch sử</option>
+                            <option value="heritage">🏛️ Lịch sử / Di sản</option>
                             <option value="checkin">📸 Check-in</option>
                             <option value="food">🍜 Ẩm thực</option>
                             <option value="culture">🎨 Văn hóa</option>
                             <option value="religious">🛕 Tôn giáo</option>
-                            <option value="heritage">🏛️ Di tích</option>
-                            <option value="entertainment">🎡 Vui chơi</option>
+                            <option value="other">📌 Khác</option>
                         </select>
                     </div>
 
@@ -691,14 +1023,14 @@ export function buildAdminRouter() {
                     </div>
                 </form>
                 <div class="p-6 bg-gray-50 border-t border-gray-100 flex justify-end space-x-4">
-                    <button onclick="closeModal()" class="px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition">Hủy</button>
-                    <button onclick="saveDest()" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200 transition">Lưu thay đổi</button>
+                    <button type="button" onclick="closeModal()" class="px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition">Hủy</button>
+                    <button type="button" onclick="saveDest()" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-200 transition">Lưu</button>
                 </div>
             </div>
         </div>
 
         <script>
-            function showDestModal(id = null) {
+            function showDestModal(id) {
                 const modal = document.getElementById('destModal');
                 const form = document.getElementById('destForm');
                 const title = document.getElementById('modalTitle');
@@ -709,20 +1041,30 @@ export function buildAdminRouter() {
                 if (id) {
                     title.innerText = 'Chỉnh sửa Địa điểm';
                     fetch('/admin/destinations/api/' + id)
-                        .then(res => res.json())
-                        .then(data => {
+                        .then(function(res) { return res.json(); })
+                        .then(function(data) {
+                            if (!data || !data.id || data.success === false) {
+                                alert(data && data.message ? data.message : 'Không tải được dữ liệu');
+                                return;
+                            }
                             document.getElementById('destId').value = data.id;
-                            document.getElementById('destName').value = data.name;
-                            document.getElementById('destCategory').value = data.category;
-                            document.getElementById('destDescription').value = data.description;
-                            document.getElementById('destCity').value = data.city;
-                            document.getElementById('destProvince').value = data.province;
-                            document.getElementById('destAddress').value = data.address;
-                            document.getElementById('destLat').value = data.latitude;
-                            document.getElementById('destLng').value = data.longitude;
+                            document.getElementById('destName').value = data.name || '';
+                            var cat = (data.category || 'other').toLowerCase();
+                            if (cat === 'historical') cat = 'heritage';
+                            if (cat === 'entertainment') cat = 'other';
+                            var sel = document.getElementById('destCategory');
+                            if (!Array.prototype.some.call(sel.options, function(o) { return o.value === cat; })) cat = 'other';
+                            sel.value = cat;
+                            document.getElementById('destDescription').value = data.description || '';
+                            document.getElementById('destCity').value = data.city || '';
+                            document.getElementById('destProvince').value = data.province || '';
+                            document.getElementById('destAddress').value = data.address || '';
+                            document.getElementById('destLat').value = data.latitude != null ? data.latitude : '';
+                            document.getElementById('destLng').value = data.longitude != null ? data.longitude : '';
                             document.getElementById('destOpen').value = data.open_time || '';
                             document.getElementById('destClose').value = data.close_time || '';
-                        });
+                        })
+                        .catch(function() { alert('Lỗi mạng'); });
                 } else {
                     title.innerText = 'Thêm Địa điểm Mới';
                 }
@@ -735,6 +1077,10 @@ export function buildAdminRouter() {
 
             async function saveDest() {
                 const form = document.getElementById('destForm');
+                if (!form.checkValidity()) {
+                    form.reportValidity();
+                    return;
+                }
                 const formData = new FormData(form);
                 const data = Object.fromEntries(formData.entries());
                 
@@ -743,46 +1089,160 @@ export function buildAdminRouter() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                
-                if (res.ok) {
+                const body = await res.json().catch(function() { return {}; });
+                if (res.ok && body.success !== false) {
                     location.reload();
                 } else {
-                    alert('Lỗi khi lưu dữ liệu');
+                    alert(body.message || body.error || 'Lỗi khi lưu dữ liệu');
                 }
             }
 
             async function deleteDest(id) {
-                if(confirm('Xóa địa điểm này?')) {
-                    const res = await fetch('/admin/destinations/delete/' + id, { method: 'POST' });
-                    if(res.ok) location.reload();
+                if (!confirm('Xóa địa điểm này khỏi app_places? Thao tác không hoàn tác.')) return;
+                const res = await fetch('/admin/destinations/delete/' + id, { method: 'POST' });
+                const body = await res.json().catch(function() { return {}; });
+                if (res.ok && body.success) {
+                    location.reload();
+                } else {
+                    alert(body.message || 'Lỗi khi xóa');
                 }
             }
         </script>
       `;
-      res.send(renderLayout(content, 'destinations', 'Quản lý Địa điểm'));
-    } catch (e) { res.status(500).send(e.message); }
+      res.send(renderLayout(content, "destinations", "Quản lý Địa điểm"));
+    } catch (e) {
+      res.status(500).send(e.message);
+    }
   });
 
   router.get("/destinations/api/:id", async (req, res) => {
-    const dest = await db.get(
-      "SELECT id, name, category, description, city, province, address, latitude, longitude, open_time, close_time FROM app_places WHERE id = ?",
-      [req.params.id]
-    );
-    res.json(dest);
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: "ID không hợp lệ" });
+      }
+      const dest = await db.get(
+        "SELECT id, name, category, description, city, province, address, latitude, longitude, open_time, close_time FROM app_places WHERE id = ?",
+        [id]
+      );
+      if (!dest) return res.status(404).json({ success: false, message: "Không tìm thấy địa điểm" });
+      return res.json(dest);
+    } catch (e) {
+      return res.status(500).json({ success: false, message: e.message });
+    }
   });
 
   router.post("/destinations/save", async (req, res) => {
-    return res.status(501).json({
-      success: false,
-      message: "Admin place writes are disabled until app_places write policy is implemented"
-    });
+    try {
+      const {
+        id,
+        name,
+        description,
+        address,
+        city,
+        province,
+        latitude,
+        longitude,
+        category,
+        open_time,
+        close_time
+      } = req.body;
+
+      const cat = normalizeAppPlaceCategory(category);
+      const idNum = id !== undefined && id !== null && id !== "" ? Number(id) : NaN;
+
+      const lat = latitude !== undefined && latitude !== "" ? Number(latitude) : NaN;
+      const lng = longitude !== undefined && longitude !== "" ? Number(longitude) : NaN;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return res.status(400).json({ success: false, message: "Vĩ độ / kinh độ không hợp lệ" });
+      }
+
+      const nameTrim = String(name || "").trim();
+      const descTrim = String(description || "").trim();
+      if (!nameTrim) {
+        return res.status(400).json({ success: false, message: "Tên địa điểm là bắt buộc" });
+      }
+      if (!descTrim) {
+        return res.status(400).json({ success: false, message: "Mô tả là bắt buộc" });
+      }
+
+      const addr = address != null ? String(address) : "";
+      const cityV = city != null ? String(city) : "";
+      const prov = province != null ? String(province) : "";
+
+      if (Number.isFinite(idNum) && idNum > 0) {
+        await db.run(
+          `UPDATE app_places
+           SET name=?, description=?, address=?, city=?, province=?, latitude=?, longitude=?, category=?, open_time=?, close_time=?
+           WHERE id=?`,
+          [
+            nameTrim,
+            descTrim,
+            addr,
+            cityV,
+            prov,
+            lat,
+            lng,
+            cat,
+            open_time || null,
+            close_time || null,
+            idNum
+          ]
+        );
+        return res.json({ success: true });
+      }
+
+      const nextRow = await db.get("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM app_places");
+      const newId = Number(nextRow?.next_id);
+      if (!Number.isFinite(newId) || newId <= 0) {
+        return res.status(500).json({ success: false, message: "Không tạo được ID mới" });
+      }
+
+      const placeKey = `ADM_${newId}`;
+      const shortDesc = descTrim.length > 500 ? descTrim.slice(0, 500) : descTrim;
+
+      await db.run(
+        `INSERT INTO app_places (
+          id, place_key, name, description, short_description, address, city, province, area,
+          latitude, longitude, category, open_time, close_time,
+          tags_json, kid_friendly, elderly_friendly, is_active, rating, review_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, '[]', 0, 0, 1, 0, 0)`,
+        [
+          newId,
+          placeKey,
+          nameTrim,
+          descTrim,
+          shortDesc,
+          addr,
+          cityV,
+          prov,
+          lat,
+          lng,
+          cat,
+          open_time || null,
+          close_time || null
+        ]
+      );
+      return res.json({ success: true, id: newId });
+    } catch (e) {
+      return res.status(500).json({ success: false, message: e.message });
+    }
   });
 
   router.post("/destinations/delete/:id", async (req, res) => {
-    return res.status(501).json({
-      success: false,
-      message: "Admin place writes are disabled until app_places write policy is implemented"
-    });
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: "ID không hợp lệ" });
+      }
+      await db.run("DELETE FROM app_places WHERE id = ?", [id]);
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({
+        success: false,
+        message: e.message || "Không xóa được (kiểm tra ràng buộc CSDL hoặc bản ghi liên quan)."
+      });
+    }
   });
 
   // 4. Hệ thống
@@ -1675,7 +2135,11 @@ json.textContent = JSON.stringify(data, null, 2);
     });
   }
 
-  const result = await postRagJson("/admin/ai/debug-query", { message }, 15000);
+  const result = await postRagJson(
+    "/admin/ai/debug-query",
+    { message },
+    RAG_ADMIN_DEBUG_TIMEOUT_MS,
+  );
   res.status(result.ok ? 200 : 502).json(result);
 });
   // 5. AI Report API
@@ -1683,27 +2147,35 @@ json.textContent = JSON.stringify(data, null, 2);
     try {
       const catStats = await db.query("SELECT category, COUNT(*) as count FROM app_places GROUP BY category");
       const overall = await db.get("SELECT AVG(rating) as avgRating FROM app_places");
+      const avgNum = Number(overall?.avgRating);
+      const avgRatingText = Number.isFinite(avgNum) ? avgNum.toFixed(2) : "0.00";
 
       const prompt = `Phân tích dữ liệu ứng dụng UnuTrip:
         - Thống kê danh mục địa điểm: ${JSON.stringify(catStats)}
-        - Điểm đánh giá trung bình: ${overall.avgRating?.toFixed(2) || 0}
+        - Điểm đánh giá trung bình: ${avgRatingText}
         Hãy viết báo cáo ngắn gọn gồm 3 mục:
         1. Nhận xét chất lượng dữ liệu hiện tại.
         2. Điểm mạnh của hệ thống gợi ý du lịch.
         3. Đề xuất cải thiện nội dung và trải nghiệm người dùng.`;
 
       let report = "";
-      const aiUrl = process.env.AI_MODEL_URL || "http://localhost:8000/chat";
-      try {
-        const aiRes = await fetch(aiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: prompt })
-        });
-        const aiData = await aiRes.json();
-        report = aiData.answer;
-      } catch (err) {
-        console.warn("Admin AI report: local AI failed, using RAG:", err.message);
+      const aiUrl = getResolvedAiModelUrl();
+
+      if (aiUrl) {
+        try {
+          const aiRes = await fetch(aiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: prompt })
+          });
+          const aiData = await aiRes.json();
+          report = typeof aiData.answer === "string" ? aiData.answer : "";
+        } catch (err) {
+          console.warn("Admin AI report: local AI failed, using RAG:", err.message);
+        }
+      }
+
+      if (!report?.trim()) {
         const result = await postRagJson(
           "/rag/chat",
           { message: prompt, top_k: 6, mode: "balanced", include_prompt: false },

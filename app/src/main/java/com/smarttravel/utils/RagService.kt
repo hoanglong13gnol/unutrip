@@ -1,14 +1,18 @@
 package com.smarttravel.utils
 
 import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.smarttravel.data.api.RetrofitClient
 import com.smarttravel.data.model.ChatMessage
 import com.smarttravel.data.model.ChatRequest
 import com.smarttravel.data.model.ChatbotResult
+import retrofit2.Response
 
 class RagService {
 
     private val api = RetrofitClient.apiService
+    private val gson = Gson()
 
     suspend fun chat(
         token: String,
@@ -43,10 +47,10 @@ class RagService {
                 val body = response.body()
                 val places = body?.places ?: emptyList()
 
-                Log.d("RAG_PLACES", "places size=${places.size}")
+                Log.d(TAG, "RAG ok places=${places.size}")
                 places.take(5).forEachIndexed { index, place ->
                     Log.d(
-                        "RAG_PLACES",
+                        TAG,
                         "#$index rawPlaceId=${place.rawPlaceId} name=${place.name} province=${place.province}"
                     )
                 }
@@ -56,20 +60,45 @@ class RagService {
                     places = places
                 )
             } else {
-                Log.d("RAG_PLACES", "RAG failed code=${response.code()} message=${response.message()}")
+                val detail = extractServerMessage(response)
+                    ?: response.body()?.message
+                    ?: response.message()
+
+                Log.w(TAG, "RAG HTTP ${response.code()} detail=$detail")
 
                 ChatbotResult(
-                    answer = "RAG không trả được câu trả lời: ${response.body()?.message ?: response.message()}",
+                    answer = "RAG không trả được câu trả lời (${response.code()}): $detail",
                     places = emptyList()
                 )
             }
         } catch (e: Exception) {
-            Log.e("RAG_PLACES", "RAG exception", e)
+            Log.e(TAG, "RAG exception", e)
 
             ChatbotResult(
                 answer = "Không gọi được RAG: ${e.message}",
                 places = emptyList()
             )
         }
+    }
+
+    private fun extractServerMessage(response: Response<*>): String? {
+        val raw = response.errorBody()?.string()?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        return try {
+            val obj = gson.fromJson(raw, JsonObject::class.java)
+            when {
+                obj.has("message") && !obj.get("message").isJsonNull ->
+                    obj.get("message").asString
+                obj.has("detail") && obj.get("detail").isJsonPrimitive ->
+                    obj.get("detail").asString
+                else -> raw.take(280)
+            }
+        } catch (_: Exception) {
+            raw.take(280)
+        }
+    }
+
+    private companion object {
+        private const val TAG = "RagService"
     }
 }

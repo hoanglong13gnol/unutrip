@@ -52,6 +52,23 @@ export async function updateUserAvatar({ userId, avatarUrl }) {
   await db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatarUrl, userId]);
 }
 
+/** Cập nhật user từ admin. `passwordHash` null/undefined = giữ mật khẩu cũ. */
+export async function adminUpdateUser({ userId, fullName, email, phone, passwordHash }) {
+  if (passwordHash) {
+    await db.run(
+      "UPDATE users SET full_name = ?, email = ?, phone = ?, password_hash = ? WHERE id = ?",
+      [fullName, email, phone ?? null, passwordHash, userId]
+    );
+  } else {
+    await db.run("UPDATE users SET full_name = ?, email = ?, phone = ? WHERE id = ?", [
+      fullName,
+      email,
+      phone ?? null,
+      userId
+    ]);
+  }
+}
+
 export async function countItinerariesByUserId(userId) {
   return db.get("SELECT COUNT(*) as count FROM itineraries WHERE user_id = ?", [userId]);
 }

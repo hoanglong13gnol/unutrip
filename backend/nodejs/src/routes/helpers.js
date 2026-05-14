@@ -1,4 +1,3 @@
-import { db } from "../db.js";
 import { parseJsonArray } from "../utils.js";
 import * as placeIdMapRepository from "../repositories/placeIdMap.repository.js";
 import * as destinationImagesRepository from "../repositories/destinationImages.repository.js";
