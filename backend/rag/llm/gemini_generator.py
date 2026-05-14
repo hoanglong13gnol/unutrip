@@ -9,6 +9,11 @@ from core.config import settings
 
 
 class GeminiGenerator:
+    """Gemini text generation with timeout, error classification, and simple quota circuit breaker."""
+
+    _circuit_open_until: float = 0.0
+    _quota_streak: int = 0
+
     def __init__(self) -> None:
         if not settings.gemini_api_key:
             raise ValueError(
@@ -22,6 +27,18 @@ class GeminiGenerator:
     def generate(self, prompt: str) -> dict[str, Any]:
         started = time.perf_counter()
 
+        if time.time() < GeminiGenerator._circuit_open_until:
+            return {
+                "ok": False,
+                "answer": "",
+                "model_used": self.model_name,
+                "latency_ms": 0.0,
+                "timeout": False,
+                "error": "Gemini circuit open (recent quota exhaustion)",
+                "error_type": "circuit_open",
+                "retry_after_seconds": max(0, int(GeminiGenerator._circuit_open_until - time.time()) + 1),
+            }
+
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._generate_sync, prompt)
 
@@ -33,6 +50,8 @@ class GeminiGenerator:
 
             if not text:
                 text = "Dữ liệu hiện chưa đủ để tạo câu trả lời chi tiết."
+
+            GeminiGenerator._quota_streak = 0
 
             return {
                 "ok": True,
@@ -50,6 +69,8 @@ class GeminiGenerator:
 
             future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)
+
+            GeminiGenerator._quota_streak = 0
 
             return {
                 "ok": False,
@@ -70,6 +91,17 @@ class GeminiGenerator:
             error_text = str(exc)
             error_type = self._classify_error(error_text)
             retry_after_seconds = self._extract_retry_after_seconds(error_text)
+
+            if error_type == "quota_exceeded":
+                GeminiGenerator._quota_streak += 1
+                if GeminiGenerator._quota_streak >= settings.gemini_circuit_failure_threshold:
+                    cooldown = max(
+                        settings.gemini_circuit_cooldown_seconds,
+                        retry_after_seconds or 0,
+                    )
+                    GeminiGenerator._circuit_open_until = time.time() + float(cooldown)
+            else:
+                GeminiGenerator._quota_streak = 0
 
             return {
                 "ok": False,

@@ -30,9 +30,24 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def optional_stripped_url(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def env_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None or not str(value).strip():
+        return default
+    return str(value).strip()
+
+
 class Settings(BaseModel):
     project_name: str = "UnuTrip RAG v2"
-    api_version: str = "0.2.0"
+    api_version: str = "0.3.0"
 
     root_dir: Path = RAG_DIR
     project_root: Path = PROJECT_ROOT
@@ -57,7 +72,19 @@ class Settings(BaseModel):
 
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    gemini_timeout_seconds: int = env_int("GEMINI_TIMEOUT_SECONDS", 12)
+    gemini_timeout_seconds: int = env_int("GEMINI_TIMEOUT_SECONDS", 45)
+
+    # Retrieval / ops
+    enable_rrf_fusion: bool = env_bool("RAG_ENABLE_RRF", True)
+    rate_limit_per_minute: int = env_int("RAG_RATE_LIMIT_PER_MINUTE", 120)
+    gemini_circuit_failure_threshold: int = env_int("RAG_GEMINI_CIRCUIT_FAILURES", 4)
+    gemini_circuit_cooldown_seconds: int = env_int("RAG_GEMINI_CIRCUIT_COOLDOWN_SECONDS", 90)
+    log_json: bool = env_bool("RAG_LOG_JSON", False)
+
+    # Redis (optional): rate limit + Gemini response cache across replicas
+    redis_url: str | None = optional_stripped_url("REDIS_URL")
+    redis_key_prefix: str = env_str("REDIS_KEY_PREFIX", "unutrip:rag:")
+    gemini_response_cache_ttl_seconds: int = env_int("GEMINI_CACHE_TTL_SECONDS", 86400)
 
 
 settings = Settings()

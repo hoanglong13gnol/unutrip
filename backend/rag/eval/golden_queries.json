@@ -1,0 +1,14 @@
+[
+  {
+    "query": "đi biển ở Khánh Hòa",
+    "relevant_place_ids": [],
+    "expect_province_norm": "khanh_hoa",
+    "top_k": 8
+  },
+  {
+    "query": "đi Huế với bố mẹ lớn tuổi, ít đi bộ",
+    "relevant_place_ids": [],
+    "expect_province_norm": "thua_thien_hue",
+    "top_k": 8
+  }
+]

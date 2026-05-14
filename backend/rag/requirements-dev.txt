@@ -1,0 +1,3 @@
+# Dev / CI only — install: pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0.0,<9
+fakeredis>=2.23.0,<3

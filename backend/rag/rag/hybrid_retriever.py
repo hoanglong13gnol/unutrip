@@ -1,13 +1,16 @@
 from dataclasses import asdict
 from typing import Any
 
+from core.config import settings
 from rag.bm25_retriever import BM25Retriever
+from rag.fusion import reciprocal_rank_fusion
 from rag.intent_parser import IntentParser, ParsedIntent
 from rag.text_utils import normalize_text
 
 
 class HybridRetriever:
     def __init__(self) -> None:
+        self._last_fusion_debug: dict[str, Any] = {}
         self.intent_parser = IntentParser()
         self.bm25 = BM25Retriever()
         self.bm25.load()
@@ -15,11 +18,9 @@ class HybridRetriever:
     def retrieve(self, query: str, top_k: int = 8) -> dict[str, Any]:
         intent = self.intent_parser.parse(query)
 
-        raw_results = self.bm25.search(
+        raw_results = self._lexical_candidates(
             query=query,
-            top_k=120,
-            doc_types=intent.preferred_doc_types,
-            province_norm=intent.province_norm,
+            intent=intent,
         )
 
         scored = []
@@ -69,8 +70,75 @@ class HybridRetriever:
                 "raw_count": len(raw_results),
                 "scored_count": len(scored),
                 "final_count": len(deduped),
+                "fusion": self._last_fusion_debug,
             },
         }
+
+    def _lexical_candidates(self, query: str, intent: ParsedIntent) -> list[dict[str, Any]]:
+        self._last_fusion_debug: dict[str, Any] = {"mode": "bm25_only"}
+
+        bm25_hits = self.bm25.search(
+            query=query,
+            top_k=120,
+            doc_types=intent.preferred_doc_types,
+            province_norm=intent.province_norm,
+        )
+
+        use_rrf = (
+            settings.enable_rrf_fusion
+            and self.bm25.has_tfidf()
+        )
+
+        if not use_rrf:
+            return bm25_hits
+
+        tfidf_hits = self.bm25.search_tfidf(
+            query=query,
+            top_k=120,
+            doc_types=intent.preferred_doc_types,
+            province_norm=intent.province_norm,
+        )
+
+        if not tfidf_hits:
+            self._last_fusion_debug = {"mode": "bm25_only", "reason": "tfidf_empty"}
+            return bm25_hits
+
+        bm25_ids = [str(h["doc_id"]) for h in bm25_hits if h.get("doc_id")]
+        tfidf_ids = [str(h["doc_id"]) for h in tfidf_hits if h.get("doc_id")]
+        rrf_scores = reciprocal_rank_fusion([bm25_ids, tfidf_ids], k=60.0)
+
+        by_id: dict[str, dict[str, Any]] = {}
+        for h in bm25_hits:
+            did = h.get("doc_id")
+            if did:
+                by_id[str(did)] = dict(h)
+
+        for h in tfidf_hits:
+            did = h.get("doc_id")
+            if did and str(did) not in by_id:
+                by_id[str(did)] = dict(h)
+
+        fused_order = sorted(rrf_scores.keys(), key=lambda d: rrf_scores[d], reverse=True)
+
+        fused: list[dict[str, Any]] = []
+        for doc_id in fused_order:
+            item = by_id.get(doc_id)
+            if not item:
+                continue
+            enriched = dict(item)
+            enriched["score"] = round(rrf_scores[doc_id] * 400.0 + float(enriched.get("score", 0.0)) * 0.01, 4)
+            enriched["rrf_score"] = round(rrf_scores[doc_id], 6)
+            fused.append(enriched)
+            if len(fused) >= 120:
+                break
+
+        self._last_fusion_debug = {
+            "mode": "rrf_bm25_tfidf",
+            "bm25_count": len(bm25_hits),
+            "tfidf_count": len(tfidf_hits),
+            "fused_count": len(fused),
+        }
+        return fused
     def _name_dedup_key(self, title: str | None) -> str:
         name = normalize_text(str(title or ""))
 

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "built_at_utc": "2026-05-13T13:11:08.474367+00:00",
+  "api_version": "0.3.0",
+  "corpus_path": "E:\\UNUtrip\\backend\\rag\\data\\processed\\places_rag_documents.jsonl",
+  "corpus_sha256": "8f46e2f84dd08efaaae15a8a99446280f39e730340adff03dba8d812b11997b6",
+  "bm25_index_path": "E:\\UNUtrip\\backend\\rag\\data\\indexes\\bm25_index.pkl",
+  "bm25_sha256": "6029f66e2b493cf67477e6c2d55f9d6d59808cfb2053ba46d9489a917a4c88e3",
+  "document_count": 22368,
+  "tfidf_enabled": true,
+  "tfidf_min_df": 2
+}

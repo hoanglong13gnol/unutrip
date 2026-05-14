@@ -1,0 +1,1062 @@
+"""Admin routes (monitoring, RAG debug, data quality)."""
+
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter
+from starlette.concurrency import run_in_threadpool
+
+from app.deps import PipelineDep
+from app.schemas import AdminAiDebugQueryRequest, AdminRagRetrieveDebugRequest
+from core.artifacts import manifest_status_block
+from core.config import settings
+
+router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+@router.get("/ai/logs")
+def admin_ai_logs(limit: int = 20) -> dict[str, Any]:
+    log_file = settings.reports_dir / "ai_request_logs.jsonl"
+
+    if not log_file.exists():
+        return {
+            "total": 0,
+            "logs": [],
+        }
+
+    records = []
+
+    for line in log_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        try:
+            records.append(json.loads(line))
+        except Exception:
+            continue
+
+    limit = max(1, min(limit, 100))
+    selected = records[-limit:]
+    selected.reverse()
+
+    return {
+        "total": len(records),
+        "limit": limit,
+        "logs": selected,
+    }
+
+
+@router.get("/ai/metrics")
+def admin_ai_metrics() -> dict[str, Any]:
+    log_file = settings.reports_dir / "ai_request_logs.jsonl"
+
+    empty_payload = {
+        "total_requests": 0,
+        "fallback_count": 0,
+        "fallback_rate": 0,
+        "timeout_count": 0,
+        "quota_exceeded_count": 0,
+        "cache_hit_count": 0,
+        "cache_hit_rate": 0,
+        "avg_total_latency": 0,
+        "avg_gemini_latency": 0,
+        "model_usage": {},
+        "top_queries": [],
+        "top_places": [],
+    }
+
+    if not log_file.exists():
+        return empty_payload
+
+    records = []
+
+    for line in log_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        try:
+            records.append(json.loads(line))
+        except Exception:
+            continue
+
+    total = len(records)
+
+    if total == 0:
+        return empty_payload
+
+    fallback_count = 0
+    timeout_count = 0
+    quota_exceeded_count = 0
+    cache_hit_count = 0
+
+    total_latency_sum = 0.0
+    total_latency_count = 0
+
+    gemini_latency_sum = 0.0
+    gemini_latency_count = 0
+
+    model_usage: dict[str, int] = {}
+    query_count: dict[str, int] = {}
+    place_count: dict[str, int] = {}
+
+    for record in records:
+        if record.get("fallback_used") is True:
+            fallback_count += 1
+
+        if record.get("gemini_timeout") is True:
+            timeout_count += 1
+
+        if record.get("generation_error_type") == "quota_exceeded":
+            quota_exceeded_count += 1
+
+        if record.get("cache_hit") is True:
+            cache_hit_count += 1
+
+        model = record.get("model_used") or "unknown"
+        model_usage[model] = model_usage.get(model, 0) + 1
+
+        query = record.get("query")
+        if query:
+            query_count[query] = query_count.get(query, 0) + 1
+
+        for place_name in record.get("top_place_names", [])[:10]:
+            if place_name:
+                place_count[place_name] = place_count.get(place_name, 0) + 1
+
+        latency = record.get("latency_ms", {})
+
+        total_latency = latency.get("total")
+        if isinstance(total_latency, (int, float)):
+            total_latency_sum += float(total_latency)
+            total_latency_count += 1
+
+        gemini_latency = latency.get("gemini")
+        if isinstance(gemini_latency, (int, float)):
+            gemini_latency_sum += float(gemini_latency)
+            gemini_latency_count += 1
+
+    top_queries = [
+        {"query": query, "count": count}
+        for query, count in sorted(
+            query_count.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:10]
+    ]
+
+    top_places = [
+        {"place": place, "count": count}
+        for place, count in sorted(
+            place_count.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:10]
+    ]
+
+    return {
+        "total_requests": total,
+        "fallback_count": fallback_count,
+        "fallback_rate": round(fallback_count / total, 4),
+        "timeout_count": timeout_count,
+        "quota_exceeded_count": quota_exceeded_count,
+        "cache_hit_count": cache_hit_count,
+        "cache_hit_rate": round(cache_hit_count / total, 4),
+        "avg_total_latency": round(total_latency_sum / total_latency_count, 2)
+        if total_latency_count
+        else 0,
+        "avg_gemini_latency": round(gemini_latency_sum / gemini_latency_count, 2)
+        if gemini_latency_count
+        else 0,
+        "model_usage": model_usage,
+        "top_queries": top_queries,
+        "top_places": top_places,
+    }
+
+
+@router.post("/ai/debug-query")
+async def admin_ai_debug_query(pipeline: PipelineDep, request: AdminAiDebugQueryRequest) -> dict[str, Any]:
+    result = await run_in_threadpool(
+        pipeline.run,
+        request.message,
+        request.top_k,
+        request.mode,
+        request.include_prompt,
+    )
+
+    return {
+        "query": request.message,
+        "answer": result.get("answer"),
+        "places": result.get("places", []),
+        "warnings": result.get("warnings", []),
+        "latency_ms": result.get("latency_ms", {}),
+        "model_used": result.get("model_used"),
+        "fallback_used": result.get("fallback_used"),
+        "runtime_mode": result.get("runtime_mode"),
+        "rag_mode": result.get("rag_mode"),
+        "debug": result.get("debug", {}),
+        "prompt": result.get("prompt") if request.include_prompt else None,
+        "context": result.get("context") if request.include_prompt else None,
+    }
+
+
+@router.post("/rag/retrieve-debug")
+def admin_rag_retrieve_debug(pipeline: PipelineDep, request: AdminRagRetrieveDebugRequest) -> dict[str, Any]:
+
+    retrieved = pipeline.retriever.retrieve(
+        query=request.message,
+        top_k=request.top_k,
+    )
+
+    debug_results = []
+
+    for item in retrieved.get("results", []):
+        meta = item.get("metadata") or {}
+
+        debug_results.append({
+            "doc_id": item.get("doc_id"),
+            "doc_type": item.get("doc_type"),
+            "place_id": item.get("place_id"),
+            "title": item.get("title"),
+            "province": meta.get("province"),
+            "city": meta.get("city"),
+            "area": meta.get("area"),
+            "category_main": meta.get("category_main"),
+            "category_sub": meta.get("category_sub"),
+            "budget_level": meta.get("budget_level_norm"),
+            "walking_level": meta.get("walking_level_norm"),
+            "kid_friendly": meta.get("kid_friendly_norm"),
+            "elderly_friendly": meta.get("elderly_friendly_norm"),
+            "slot": meta.get("slot_norm"),
+            "quality_score": meta.get("quality_score"),
+            "recommended_use": meta.get("recommended_use_norm"),
+            "requires_realtime_check": meta.get("requires_realtime_check"),
+            "bm25_score": item.get("bm25_score"),
+            "rule_score": item.get("rule_score"),
+            "final_score": item.get("final_score"),
+            "reasons": item.get("reasons", []),
+        })
+
+    return {
+        "query": request.message,
+        "intent": retrieved.get("intent"),
+        "debug": retrieved.get("debug"),
+        "results": debug_results,
+    }
+
+
+@router.get("/rag/status")
+def admin_rag_status() -> dict[str, Any]:
+    def file_status(path: Path) -> dict[str, Any]:
+        exists = path.exists()
+
+        return {
+            "path": str(path),
+            "exists": exists,
+            "size_bytes": path.stat().st_size if exists else 0,
+            "size_mb": round(path.stat().st_size / 1024 / 1024, 2) if exists else 0,
+        }
+
+    bm25_index_file = settings.indexes_dir / "bm25_index.pkl"
+    places_app_reviewed_file = settings.processed_data_dir / "places_app_reviewed.json"
+
+    files = {
+        "places_master": file_status(settings.places_master_file),
+        "places_app": file_status(settings.places_app_file),
+        "places_app_reviewed": file_status(places_app_reviewed_file),
+        "places_itinerary": file_status(settings.places_itinerary_file),
+        "rag_documents": file_status(settings.rag_documents_file),
+        "bm25_index": file_status(bm25_index_file),
+    }
+
+    required_keys = [
+        "places_master",
+        "places_app",
+        "places_itinerary",
+        "rag_documents",
+        "bm25_index",
+    ]
+
+    ready = all(files[key]["exists"] for key in required_keys)
+
+    return {
+        "service": "UnuTrip RAG v2",
+        "ready": ready,
+        "files": files,
+        "artifacts": manifest_status_block(),
+    }
+
+
+@router.get("/rag/place/{place_id}")
+def admin_rag_place_detail(pipeline: PipelineDep, place_id: str) -> dict[str, Any]:
+
+    place = pipeline.place_store.get(place_id)
+
+    if place is None:
+        return {
+            "found": False,
+            "place_id": place_id,
+            "message": "Place not found",
+            "store": pipeline.place_store.status(),
+        }
+
+    return {
+        "found": True,
+        "place": place,
+    }
+
+
+@router.post("/rag/place-store/reload")
+def admin_rag_place_store_reload(pipeline: PipelineDep) -> dict[str, Any]:
+
+    pipeline.place_store.load()
+
+    return {
+        "reloaded": True,
+        "store": pipeline.place_store.status(),
+    }
+
+
+@router.get("/rag/places/search")
+def admin_rag_places_search(pipeline: PipelineDep, 
+    q: str | None = None,
+    province: str | None = None,
+    category: str | None = None,
+    active_only: bool = True,
+    limit: int = 20,
+    min_score: float | None = None,
+) -> dict[str, Any]:
+
+    results = pipeline.place_store.search(
+        q=q,
+        province=province,
+        category=category,
+        active_only=active_only,
+        limit=limit,
+        min_score=min_score,
+    )
+
+    return {
+        "query": q,
+        "province": province,
+        "category": category,
+        "active_only": active_only,
+        "limit": limit,
+        "min_score": min_score,
+        "count": len(results),
+        "results": results,
+        "store": pipeline.place_store.status(),
+    }
+
+
+@router.get("/cache/status")
+def admin_cache_status(pipeline: PipelineDep) -> dict[str, Any]:
+
+    return pipeline.response_cache.status()
+
+
+@router.post("/cache/clear")
+def admin_cache_clear(pipeline: PipelineDep) -> dict[str, Any]:
+
+    return pipeline.response_cache.clear()
+@router.get("/data-quality/status")
+def admin_data_quality_status() -> dict[str, Any]:
+    issues_file = settings.reports_dir / "data_quality_issues.json"
+    autofix_file = settings.reports_dir / "data_quality_autofix_report.json"
+    reviewed_file = settings.processed_data_dir / "places_app_reviewed.json"
+
+    def file_info(path: Path) -> dict[str, Any]:
+        exists = path.exists()
+
+        return {
+            "path": str(path),
+            "exists": exists,
+            "size_bytes": path.stat().st_size if exists else 0,
+            "size_mb": round(path.stat().st_size / 1024 / 1024, 2) if exists else 0,
+        }
+
+    scan_payload: dict[str, Any] = {
+        "exists": False,
+        "place_count": 0,
+        "issue_count": 0,
+        "issue_counts": {},
+        "severity_counts": {},
+    }
+
+    if issues_file.exists():
+        try:
+            data = json.loads(issues_file.read_text(encoding="utf-8"))
+            issues = data.get("issues", [])
+
+            issue_counts: dict[str, int] = {}
+            severity_counts: dict[str, int] = {}
+
+            for issue in issues:
+                issue_type = issue.get("issue_type") or "unknown"
+                severity = issue.get("severity") or "unknown"
+
+                issue_counts[issue_type] = issue_counts.get(issue_type, 0) + 1
+                severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+            scan_payload = {
+                "exists": True,
+                "file": file_info(issues_file),
+                "place_count": data.get("place_count", 0),
+                "issue_count": data.get("issue_count", len(issues)),
+                "issue_counts": issue_counts,
+                "severity_counts": severity_counts,
+            }
+        except Exception as exc:
+            scan_payload = {
+                "exists": True,
+                "file": file_info(issues_file),
+                "error": str(exc),
+                "place_count": 0,
+                "issue_count": 0,
+                "issue_counts": {},
+                "severity_counts": {},
+            }
+
+    autofix_payload: dict[str, Any] = {
+        "exists": False,
+        "changed_count": 0,
+        "output_file": None,
+    }
+
+    if autofix_file.exists():
+        try:
+            data = json.loads(autofix_file.read_text(encoding="utf-8"))
+
+            autofix_payload = {
+                "exists": True,
+                "file": file_info(autofix_file),
+                "input_file": data.get("input_file"),
+                "output_file": data.get("output_file"),
+                "place_count": data.get("place_count", 0),
+                "changed_count": data.get("changed_count", 0),
+            }
+        except Exception as exc:
+            autofix_payload = {
+                "exists": True,
+                "file": file_info(autofix_file),
+                "error": str(exc),
+                "changed_count": 0,
+                "output_file": None,
+            }
+
+    reviewed_payload = {
+        "exists": reviewed_file.exists(),
+        "file": file_info(reviewed_file),
+    }
+
+    return {
+        "service": "UnuTrip RAG v2",
+        "scan": scan_payload,
+        "autofix": autofix_payload,
+        "reviewed": reviewed_payload,
+    }
+@router.get("/data-quality/issues")
+def admin_data_quality_issues(
+    issue_type: str | None = None,
+    severity: str | None = None,
+    province: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    issues_file = settings.reports_dir / "data_quality_issues.json"
+
+    if not issues_file.exists():
+        return {
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "filters": {
+                "issue_type": issue_type,
+                "severity": severity,
+                "province": province,
+                "q": q,
+            },
+            "items": [],
+        }
+
+    try:
+        data = json.loads(issues_file.read_text(encoding="utf-8"))
+        issues = data.get("issues", [])
+    except Exception as exc:
+        return {
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "error": str(exc),
+            "filters": {
+                "issue_type": issue_type,
+                "severity": severity,
+                "province": province,
+                "q": q,
+            },
+            "items": [],
+        }
+
+    def normalize_filter(value: str | None) -> str:
+        return (value or "").strip().lower()
+
+    issue_type_filter = normalize_filter(issue_type)
+    severity_filter = normalize_filter(severity)
+    province_filter = normalize_filter(province)
+    q_filter = normalize_filter(q)
+
+    filtered = []
+
+    for issue in issues:
+        if issue_type_filter:
+            if normalize_filter(issue.get("issue_type")) != issue_type_filter:
+                continue
+
+        if severity_filter:
+            if normalize_filter(issue.get("severity")) != severity_filter:
+                continue
+
+        if province_filter:
+            if province_filter not in normalize_filter(issue.get("province")):
+                continue
+
+        if q_filter:
+            searchable = " ".join([
+                str(issue.get("place_id") or ""),
+                str(issue.get("name") or ""),
+                str(issue.get("province") or ""),
+                str(issue.get("area") or ""),
+                str(issue.get("category_main") or ""),
+                str(issue.get("category_sub") or ""),
+                str(issue.get("message") or ""),
+            ]).lower()
+
+            if q_filter not in searchable:
+                continue
+
+        filtered.append(issue)
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    page_items = filtered[offset: offset + limit]
+
+    return {
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+        "filters": {
+            "issue_type": issue_type,
+            "severity": severity,
+            "province": province,
+            "q": q,
+        },
+        "items": page_items,
+    }
+@router.get("/data-quality/autofix-changes")
+def admin_data_quality_autofix_changes(
+    province: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    changes_file = settings.reports_dir / "data_quality_autofix_changes.csv"
+
+    if not changes_file.exists():
+        return {
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "filters": {
+                "province": province,
+                "q": q,
+            },
+            "items": [],
+        }
+
+    records = []
+
+    try:
+        with changes_file.open("r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            records = list(reader)
+    except Exception as exc:
+        return {
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "error": str(exc),
+            "filters": {
+                "province": province,
+                "q": q,
+            },
+            "items": [],
+        }
+
+    def normalize_filter(value: str | None) -> str:
+        return (value or "").strip().lower()
+
+    province_filter = normalize_filter(province)
+    q_filter = normalize_filter(q)
+
+    filtered = []
+
+    for record in records:
+        if province_filter:
+            record_province = normalize_filter(record.get("province"))
+            if province_filter not in record_province:
+                continue
+
+        if q_filter:
+            searchable = " ".join([
+                str(record.get("place_id") or ""),
+                str(record.get("name") or ""),
+                str(record.get("province") or ""),
+                str(record.get("area") or ""),
+                str(record.get("old_category_main") or ""),
+                str(record.get("old_category_sub") or ""),
+                str(record.get("new_category_main") or ""),
+                str(record.get("new_category_sub") or ""),
+                str(record.get("reason") or ""),
+            ]).lower()
+
+            if q_filter not in searchable:
+                continue
+
+        filtered.append(record)
+
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    page_items = filtered[offset: offset + limit]
+
+    return {
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+        "filters": {
+            "province": province,
+            "q": q,
+        },
+        "items": page_items,
+    }
+@router.get("/data-quality/summary-by-province")
+def admin_data_quality_summary_by_province() -> dict[str, Any]:
+    issues_file = settings.reports_dir / "data_quality_issues.json"
+    autofix_changes_file = settings.reports_dir / "data_quality_autofix_changes.csv"
+
+    province_map: dict[str, dict[str, Any]] = {}
+
+    def get_row(province: str | None) -> dict[str, Any]:
+        province_name = (province or "Unknown").strip() or "Unknown"
+
+        if province_name not in province_map:
+            province_map[province_name] = {
+                "province": province_name,
+                "issue_count": 0,
+                "high_count": 0,
+                "medium_count": 0,
+                "low_count": 0,
+                "unknown_severity_count": 0,
+                "autofix_count": 0,
+                "issue_types": {},
+            }
+
+        return province_map[province_name]
+
+    if issues_file.exists():
+        try:
+            data = json.loads(issues_file.read_text(encoding="utf-8"))
+            issues = data.get("issues", [])
+
+            for issue in issues:
+                row = get_row(issue.get("province"))
+                row["issue_count"] += 1
+
+                severity = (issue.get("severity") or "unknown").strip().lower()
+
+                if severity == "high":
+                    row["high_count"] += 1
+                elif severity == "medium":
+                    row["medium_count"] += 1
+                elif severity == "low":
+                    row["low_count"] += 1
+                else:
+                    row["unknown_severity_count"] += 1
+
+                issue_type = issue.get("issue_type") or "unknown"
+                row["issue_types"][issue_type] = row["issue_types"].get(issue_type, 0) + 1
+
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "total_provinces": 0,
+                "items": [],
+            }
+
+    if autofix_changes_file.exists():
+        try:
+            with autofix_changes_file.open("r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+
+                for record in reader:
+                    row = get_row(record.get("province"))
+                    row["autofix_count"] += 1
+
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "total_provinces": 0,
+                "items": [],
+            }
+
+    items = sorted(
+        province_map.values(),
+        key=lambda item: (
+            item["issue_count"],
+            item["high_count"],
+            item["autofix_count"],
+        ),
+        reverse=True,
+    )
+
+    return {
+        "total_provinces": len(items),
+        "items": items,
+    }
+@router.get("/system/overview")
+def admin_system_overview(pipeline: PipelineDep) -> dict[str, Any]:
+
+    bm25_index_file = settings.indexes_dir / "bm25_index.pkl"
+    places_app_reviewed_file = settings.processed_data_dir / "places_app_reviewed.json"
+
+    def file_status(path: Path) -> dict[str, Any]:
+        exists = path.exists()
+
+        return {
+            "path": str(path),
+            "exists": exists,
+            "size_bytes": path.stat().st_size if exists else 0,
+            "size_mb": round(path.stat().st_size / 1024 / 1024, 2) if exists else 0,
+        }
+
+    rag_files = {
+        "places_master": file_status(settings.places_master_file),
+        "places_app": file_status(settings.places_app_file),
+        "places_app_reviewed": file_status(places_app_reviewed_file),
+        "places_itinerary": file_status(settings.places_itinerary_file),
+        "rag_documents": file_status(settings.rag_documents_file),
+        "bm25_index": file_status(bm25_index_file),
+    }
+
+    required_rag_keys = [
+        "places_master",
+        "places_app",
+        "places_itinerary",
+        "rag_documents",
+        "bm25_index",
+    ]
+
+    rag_ready = all(rag_files[key]["exists"] for key in required_rag_keys)
+
+    cache_status = pipeline.response_cache.status()
+
+    # AI metrics summary.
+    log_file = settings.reports_dir / "ai_request_logs.jsonl"
+    ai_metrics = {
+        "total_requests": 0,
+        "fallback_count": 0,
+        "fallback_rate": 0,
+        "timeout_count": 0,
+        "quota_exceeded_count": 0,
+        "cache_hit_count": 0,
+        "cache_hit_rate": 0,
+        "avg_total_latency": 0,
+        "avg_gemini_latency": 0,
+        "model_usage": {},
+    }
+
+    if log_file.exists():
+        records = []
+
+        for line in log_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                records.append(json.loads(line))
+            except Exception:
+                continue
+
+        total = len(records)
+
+        if total > 0:
+            fallback_count = 0
+            timeout_count = 0
+            quota_exceeded_count = 0
+            cache_hit_count = 0
+
+            total_latency_sum = 0.0
+            total_latency_count = 0
+
+            gemini_latency_sum = 0.0
+            gemini_latency_count = 0
+
+            model_usage: dict[str, int] = {}
+
+            for record in records:
+                if record.get("fallback_used") is True:
+                    fallback_count += 1
+
+                if record.get("gemini_timeout") is True:
+                    timeout_count += 1
+
+                if record.get("generation_error_type") == "quota_exceeded":
+                    quota_exceeded_count += 1
+
+                if record.get("cache_hit") is True:
+                    cache_hit_count += 1
+
+                model = record.get("model_used") or "unknown"
+                model_usage[model] = model_usage.get(model, 0) + 1
+
+                latency = record.get("latency_ms", {})
+
+                total_latency = latency.get("total")
+                if isinstance(total_latency, (int, float)):
+                    total_latency_sum += float(total_latency)
+                    total_latency_count += 1
+
+                gemini_latency = latency.get("gemini")
+                if isinstance(gemini_latency, (int, float)):
+                    gemini_latency_sum += float(gemini_latency)
+                    gemini_latency_count += 1
+
+            ai_metrics = {
+                "total_requests": total,
+                "fallback_count": fallback_count,
+                "fallback_rate": round(fallback_count / total, 4),
+                "timeout_count": timeout_count,
+                "quota_exceeded_count": quota_exceeded_count,
+                "cache_hit_count": cache_hit_count,
+                "cache_hit_rate": round(cache_hit_count / total, 4),
+                "avg_total_latency": round(total_latency_sum / total_latency_count, 2)
+                if total_latency_count
+                else 0,
+                "avg_gemini_latency": round(gemini_latency_sum / gemini_latency_count, 2)
+                if gemini_latency_count
+                else 0,
+                "model_usage": model_usage,
+            }
+
+    # Data quality summary.
+    issues_file = settings.reports_dir / "data_quality_issues.json"
+    autofix_file = settings.reports_dir / "data_quality_autofix_report.json"
+
+    data_quality = {
+        "scan_exists": issues_file.exists(),
+        "autofix_exists": autofix_file.exists(),
+        "reviewed_exists": places_app_reviewed_file.exists(),
+        "place_count": 0,
+        "issue_count": 0,
+        "issue_counts": {},
+        "severity_counts": {},
+        "autofix_changed_count": 0,
+    }
+
+    if issues_file.exists():
+        try:
+            data = json.loads(issues_file.read_text(encoding="utf-8"))
+            issues = data.get("issues", [])
+
+            issue_counts: dict[str, int] = {}
+            severity_counts: dict[str, int] = {}
+
+            for issue in issues:
+                issue_type = issue.get("issue_type") or "unknown"
+                severity = issue.get("severity") or "unknown"
+
+                issue_counts[issue_type] = issue_counts.get(issue_type, 0) + 1
+                severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+            data_quality["place_count"] = data.get("place_count", 0)
+            data_quality["issue_count"] = data.get("issue_count", len(issues))
+            data_quality["issue_counts"] = issue_counts
+            data_quality["severity_counts"] = severity_counts
+
+        except Exception as exc:
+            data_quality["scan_error"] = str(exc)
+
+    if autofix_file.exists():
+        try:
+            data = json.loads(autofix_file.read_text(encoding="utf-8"))
+            data_quality["autofix_changed_count"] = data.get("changed_count", 0)
+        except Exception as exc:
+            data_quality["autofix_error"] = str(exc)
+
+    return {
+        "service": "UnuTrip RAG v2",
+        "runtime": {
+            "runtime_mode": settings.ai_runtime_mode,
+            "enable_gemini": settings.enable_gemini,
+            "enable_lora": settings.enable_lora,
+            "enable_validator": settings.enable_validator,
+            "gemini_model": settings.gemini_model if settings.enable_gemini else None,
+            "gemini_configured": bool(settings.gemini_api_key),
+        },
+        "rag": {
+            "ready": rag_ready,
+            "using_reviewed": pipeline.place_store.status().get("using_reviewed"),
+            "place_store": pipeline.place_store.status(),
+            "files": rag_files,
+            "artifacts": manifest_status_block(),
+        },
+        "cache": cache_status,
+        "ai_metrics": ai_metrics,
+        "data_quality": data_quality,
+    }
+@router.get("/system/self-test")
+def admin_system_self_test(pipeline: PipelineDep) -> dict[str, Any]:
+
+    checks: dict[str, Any] = {}
+
+    bm25_index_file = settings.indexes_dir / "bm25_index.pkl"
+    places_app_reviewed_file = settings.processed_data_dir / "places_app_reviewed.json"
+    issues_file = settings.reports_dir / "data_quality_issues.json"
+    autofix_file = settings.reports_dir / "data_quality_autofix_report.json"
+
+    # 1. Basic health.
+    checks["health_ok"] = {
+        "ok": True,
+        "message": "Service is running.",
+    }
+
+    # 2. RAG files.
+    rag_files = {
+        "places_master": settings.places_master_file,
+        "places_app": settings.places_app_file,
+        "places_app_reviewed": places_app_reviewed_file,
+        "places_itinerary": settings.places_itinerary_file,
+        "rag_documents": settings.rag_documents_file,
+        "bm25_index": bm25_index_file,
+    }
+
+    missing_rag_files = [
+        name for name, path in rag_files.items()
+        if not path.exists()
+    ]
+
+    checks["rag_files_ready"] = {
+        "ok": len(missing_rag_files) == 0,
+        "missing": missing_rag_files,
+    }
+
+    # 3. PlaceStore.
+    place_store_status = pipeline.place_store.status()
+
+    checks["place_store_ready"] = {
+        "ok": bool(place_store_status.get("loaded"))
+        and int(place_store_status.get("place_count", 0)) > 0,
+        "store": place_store_status,
+    }
+
+    checks["place_store_using_reviewed"] = {
+        "ok": bool(place_store_status.get("using_reviewed")),
+        "source_file": place_store_status.get("source_file"),
+    }
+
+    # 4. Cache.
+    try:
+        cache_status = pipeline.response_cache.status()
+        checks["cache_ok"] = {
+            "ok": bool(cache_status.get("enabled")),
+            "cache": cache_status,
+        }
+    except Exception as exc:
+        checks["cache_ok"] = {
+            "ok": False,
+            "error": str(exc),
+        }
+
+    # 5. Data quality reports.
+    checks["data_quality_report_ok"] = {
+        "ok": issues_file.exists() and autofix_file.exists() and places_app_reviewed_file.exists(),
+        "issues_exists": issues_file.exists(),
+        "autofix_exists": autofix_file.exists(),
+        "reviewed_exists": places_app_reviewed_file.exists(),
+    }
+
+    # 6. Retrieval smoke tests.
+    def run_retrieve_check(name: str, query: str, expected_province_norm: str) -> dict[str, Any]:
+        try:
+            retrieved = pipeline.retriever.retrieve(
+                query=query,
+                top_k=6,
+            )
+
+            results = retrieved.get("results", [])
+            intent = retrieved.get("intent", {})
+            debug = retrieved.get("debug", {})
+
+            top_places = [
+                {
+                    "place_id": item.get("place_id"),
+                    "title": item.get("title"),
+                    "doc_type": item.get("doc_type"),
+                    "final_score": item.get("final_score"),
+                }
+                for item in results[:5]
+            ]
+
+            province_ok = intent.get("province_norm") == expected_province_norm
+            results_ok = len(results) > 0
+
+            return {
+                "ok": province_ok and results_ok,
+                "query": query,
+                "expected_province_norm": expected_province_norm,
+                "actual_province_norm": intent.get("province_norm"),
+                "result_count": len(results),
+                "debug": debug,
+                "top_places": top_places,
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "query": query,
+                "error": str(exc),
+            }
+
+    checks["retrieve_khanhhoa_ok"] = run_retrieve_check(
+        name="retrieve_khanhhoa_ok",
+        query="đi biển ở Khánh Hòa",
+        expected_province_norm="khanh_hoa",
+    )
+
+    checks["retrieve_hue_ok"] = run_retrieve_check(
+        name="retrieve_hue_ok",
+        query="đi Huế với bố mẹ lớn tuổi, ít đi bộ",
+        expected_province_norm="thua_thien_hue",
+    )
+
+    passed = sum(1 for item in checks.values() if item.get("ok") is True)
+    failed = sum(1 for item in checks.values() if item.get("ok") is not True)
+
+    return {
+        "service": "UnuTrip RAG v2",
+        "ready": failed == 0,
+        "passed": passed,
+        "failed": failed,
+        "checks": checks,
+    }
+

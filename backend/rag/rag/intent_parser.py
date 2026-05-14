@@ -39,6 +39,15 @@ PROVINCE_ALIASES = {
     "sapa": "lao_cai",
     "sa pa": "lao_cai",
     "lao cai": "lao_cai",
+
+    "cao bang": "cao_bang",
+
+    "ha giang": "ha_giang",
+    "hagiang": "ha_giang",
+
+    "dong van": "ha_giang",
+    "meo vac": "ha_giang",
+    "hoang su phi": "ha_giang",
 }
 
 
@@ -119,7 +128,22 @@ class IntentParser:
         return intent
 
     def _detect_intent(self, q: str, intent: ParsedIntent) -> None:
-        if any(x in q for x in ["lich trinh", "ke hoach", "1 ngay", "2 ngay", "3 ngay", "tour"]):
+        if any(
+            x in q
+            for x in [
+                "lich trinh",
+                "len lich",
+                "ke hoach",
+                "1 ngay",
+                "2 ngay",
+                "3 ngay",
+                "4 ngay",
+                "5 ngay",
+                "6 ngay",
+                "7 ngay",
+                "tour",
+            ]
+        ):
             intent.intent = "itinerary"
         elif any(x in q for x in ["so sanh", "khac nhau", "nen chon"]):
             intent.intent = "compare"
@@ -144,11 +168,16 @@ class IntentParser:
             intent.days = 1
 
     def _detect_time_slot(self, q: str, intent: ParsedIntent) -> None:
+        # "2 ngày 1 đêm" / "3 ngay 2 dem" = số đêm lưu trú — không phải khung giờ "tối/đêm".
+        if re.search(r"\d+\s*ngay", q) and re.search(r"\d+\s+dem\b", q):
+            return
+
         if any(x in q for x in ["buoi sang", "sang som", "sang"]):
             intent.time_slot = "morning"
         if any(x in q for x in ["buoi chieu", "chieu"]):
             intent.time_slot = "afternoon"
-        if any(x in q for x in ["buoi toi", "toi", "dem", "ban dem"]):
+        # Không dùng "toi" (trùng "tôi" muốn…) hay "dem" đơn lẻ (trùng "M đêm" trong lịch).
+        if any(x in q for x in ["buoi toi", "ban dem", "khuya", "cuoi ngay"]):
             intent.time_slot = "evening"
 
     def _detect_budget(self, q: str, intent: ParsedIntent) -> None:

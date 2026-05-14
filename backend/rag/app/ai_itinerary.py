@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.deps import PipelineDep
 from core.config import settings
 
 
@@ -22,6 +23,11 @@ class ItineraryPreviewRequest(BaseModel):
     budget: float | None = None
     preferences: list[str] = Field(default_factory=list)
     province: str | None = None
+    contextQuery: str | None = Field(
+        default=None,
+        validation_alias="contextQuery",
+        description="Tùy chọn: câu / ngữ cảnh giống chatbot để retrieve khớp luồng RAG chat.",
+    )
 
 
 def normalize_text(value: Any) -> str:
@@ -102,7 +108,8 @@ def get_numeric_destination_id(place: dict[str, Any]) -> int | None:
     Only returns numeric destinations.id if the source already has it.
 
     Current RAG data mainly has place_id like AG_0047, so this often returns None.
-    Backend Node will later map rawPlaceId -> destinations.id using rag_places.destination_id.
+    Backend Node maps rawPlaceId -> app place id via place_id_map (column new_app_place_id;
+    first v2 cut equals legacy destinations.id for itinerary FKs).
     """
 
     raw_id = (
@@ -118,6 +125,53 @@ def get_numeric_destination_id(place: dict[str, Any]) -> int | None:
         return int(raw_id)
     except Exception:
         return None
+
+
+def build_sync_query(request: ItineraryPreviewRequest) -> str:
+    explicit = (request.contextQuery or "").strip()
+    if explicit:
+        return explicit
+    parts: list[str] = []
+    if request.province and str(request.province).strip():
+        parts.append(f"Gợi ý lịch trình du lịch {request.province.strip()}")
+    if request.title and str(request.title).strip():
+        parts.append(str(request.title).strip())
+    if request.description and str(request.description).strip():
+        parts.append(str(request.description).strip())
+    if request.preferences:
+        parts.append("Sở thích: " + ", ".join(str(p) for p in request.preferences if p))
+    q = ". ".join(parts)
+    return q.strip() if q.strip() else "Gợi ý địa điểm du lịch Việt Nam"
+
+
+def _catalog_index_by_place_id(places: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for place in places:
+        rid = get_raw_place_id(place)
+        if rid:
+            out[str(rid)] = place
+    return out
+
+
+def retrieval_seed_rank(
+    pipeline: Any,
+    catalog: list[dict[str, Any]],
+    query: str,
+    top_k: int = 40,
+) -> dict[str, int]:
+    """place_id -> thứ hạng retrieve (0 = mạnh nhất). Rỗng nếu lỗi / không khớp catalog."""
+    try:
+        retrieved = pipeline.retriever.retrieve(query, top_k=top_k)
+        results = retrieved.get("results") or []
+    except Exception:
+        return {}
+    by_id = _catalog_index_by_place_id(catalog)
+    rank: dict[str, int] = {}
+    for i, item in enumerate(results):
+        pid = str(item.get("place_id") or "").strip()
+        if pid and pid in by_id and pid not in rank:
+            rank[pid] = i
+    return rank
 
 
 def get_first_image(place: dict[str, Any]) -> str | None:
@@ -742,6 +796,7 @@ def rank_places_for_option(
     option_preferences: list[str],
     option_keywords: list[str],
     limit: int,
+    retrieval_rank: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     option_request = ItineraryPreviewRequest(
         title=request.title,
@@ -770,6 +825,11 @@ def rank_places_for_option(
             continue
 
         score = score_place(place, option_request)
+
+        if retrieval_rank:
+            ridx = retrieval_rank.get(raw_place_id)
+            if ridx is not None:
+                score += 450 - min(ridx, 300)
 
         category = app_category_from_rag(place)
         if category in option_preferences:
@@ -831,22 +891,51 @@ def distribute_places_to_days(
     total_days: int,
     max_items_per_day: int = 3,
 ) -> list[AIItineraryOptionDay]:
-    days = [
-        AIItineraryOptionDay(dayNumber=day_number, items=[])
-        for day_number in range(1, total_days + 1)
-    ]
-
-    max_total_items = total_days * max_items_per_day
+    """Chia địa điểm theo ngày giữ thứ tự (chunk tuần tự), giống Android ChatTripDayParser — không round-robin."""
+    d = max(1, int(total_days))
+    max_total_items = d * max_items_per_day
     selected_places = places[:max_total_items]
+    n = len(selected_places)
 
-    for index, place in enumerate(selected_places):
-        day_index = index % total_days
-        recommended_day = day_index + 1
-        days[day_index].items.append(
-            build_suggestion_item(place, recommended_day)
+    if n == 0:
+        return [AIItineraryOptionDay(dayNumber=day_number, items=[]) for day_number in range(1, d + 1)]
+
+    if n < d:
+        days_out: list[AIItineraryOptionDay] = []
+        for index, place in enumerate(selected_places):
+            day_num = index + 1
+            days_out.append(
+                AIItineraryOptionDay(
+                    dayNumber=day_num,
+                    items=[build_suggestion_item(place, day_num)],
+                )
+            )
+        have = {x.dayNumber for x in days_out}
+        for dn in range(1, d + 1):
+            if dn not in have:
+                days_out.append(AIItineraryOptionDay(dayNumber=dn, items=[]))
+        days_out.sort(key=lambda x: x.dayNumber)
+        return days_out
+
+    base = n // d
+    remainder = n % d
+    sizes = [base + (1 if idx < remainder else 0) for idx in range(d)]
+    days_out = []
+    offset = 0
+    for day in range(1, d + 1):
+        sz = sizes[day - 1]
+        if sz <= 0:
+            days_out.append(AIItineraryOptionDay(dayNumber=day, items=[]))
+            continue
+        slice_places = selected_places[offset : offset + sz]
+        days_out.append(
+            AIItineraryOptionDay(
+                dayNumber=day,
+                items=[build_suggestion_item(p, day) for p in slice_places],
+            )
         )
-
-    return days
+        offset += sz
+    return days_out
 
 
 def build_option_summary(theme: str, province: str | None) -> str:
@@ -876,6 +965,7 @@ def build_itinerary_option(
     option_preferences: list[str],
     option_keywords: list[str],
     max_items_per_day: int,
+    retrieval_rank: dict[str, int] | None = None,
 ) -> AIItineraryOption:
     total_days = estimate_trip_days(request.startDate, request.endDate)
     ranked_places = rank_places_for_option(
@@ -884,6 +974,7 @@ def build_itinerary_option(
         option_preferences=option_preferences,
         option_keywords=option_keywords,
         limit=max(12, total_days * max_items_per_day + 4),
+        retrieval_rank=retrieval_rank,
     )
 
     days = distribute_places_to_days(
@@ -916,7 +1007,10 @@ def build_itinerary_option(
 
 
 @router.post("/itinerary-options")
-def itinerary_options(request: ItineraryPreviewRequest) -> dict[str, Any]:
+def itinerary_options(
+    request: ItineraryPreviewRequest,
+    pipeline: PipelineDep,
+) -> dict[str, Any]:
     places = load_places()
 
     if not places:
@@ -929,6 +1023,9 @@ def itinerary_options(request: ItineraryPreviewRequest) -> dict[str, Any]:
                 "options": [],
             },
         }
+
+    sync_q = build_sync_query(request)
+    retrieval_rank = retrieval_seed_rank(pipeline, places, sync_q)
 
     province_label = request.province or "điểm đến"
 
@@ -977,6 +1074,7 @@ def itinerary_options(request: ItineraryPreviewRequest) -> dict[str, Any]:
             option_preferences=spec["preferences"],
             option_keywords=spec["keywords"],
             max_items_per_day=spec["max_items_per_day"],
+            retrieval_rank=retrieval_rank,
         )
         for spec in option_specs
     ]
@@ -985,7 +1083,10 @@ def itinerary_options(request: ItineraryPreviewRequest) -> dict[str, Any]:
         "success": True,
         "data": {
             "title": request.title or "Lịch trình AI gợi ý",
-            "summary": "AI/RAG đã tạo nhiều phương án tour. Bạn có thể chọn một tour rồi chỉnh sửa địa điểm trước khi lưu.",
+            "summary": (
+                "Các phương án ưu tiên địa điểm cùng cụm retrieve RAG với form của bạn; "
+                "chia ngày giữ đúng thứ tự gợi ý (giống bước tạo lịch từ chatbot)."
+            ),
             "options": [option.model_dump() for option in options],
         },
     }

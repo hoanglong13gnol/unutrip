@@ -80,6 +80,8 @@ cd backend/rag
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+python jobs/build_rag_artifacts.py
+# hoặc chỉ build index từ JSONL hiện có: python scripts/06_build_bm25_index.py
 uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
@@ -119,7 +121,7 @@ docker run -p 8001:8001 --env-file .env unutrip-rag
 ### RAG (FastAPI)
 
 - **Legacy paths** (không đổi): `/health`, `/rag/chat`, `/rag/chat/simple`, `/rag/retrieve`, `/ai/...`, `/admin/...`
-- **Phiên bản API**: metadata `settings.api_version` (hiện **0.2.0**).
+- **Phiên bản API**: metadata `settings.api_version` (hiện **0.3.0**).
 - **Prefix `/v1`**:  
   - Toàn bộ **AI itinerary** có thêm bản tại `/v1/ai/...`  
   - Thêm alias: `/v1/health`, `/v1/health/ready`, `/v1/runtime/status`, `/v1/rag/chat`, `/v1/rag/retrieve`, `/v1/rag/chat/simple`

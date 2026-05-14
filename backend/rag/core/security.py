@@ -8,6 +8,12 @@ def get_internal_api_key() -> str | None:
     return raw or None
 
 
+def get_admin_api_key() -> str | None:
+    """When set, /admin/* requires this key (or Bearer) instead of the app internal key."""
+    raw = os.getenv("RAG_ADMIN_API_KEY", "").strip()
+    return raw or None
+
+
 def get_cors_origins() -> list[str]:
     raw = os.getenv("RAG_CORS_ORIGINS", "").strip()
     if not raw:

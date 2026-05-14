@@ -67,10 +67,14 @@ class RagPipeline:
             place.get("area") or meta.get("area")
         )
 
+        # Python: "" in "ha giang" is True — metadata thiếu tỉnh không được coi là khớp.
+        if not province and not city and not area:
+            return False
+
         return (
             province == target
-            or target in province
-            or province in target
+            or (bool(province) and target in province)
+            or (bool(province) and province in target)
             or city == target
             or area == target
         )
@@ -104,7 +108,15 @@ class RagPipeline:
 
             return new_retrieved
 
-        return retrieved
+        new_retrieved = dict(retrieved)
+        new_retrieved["results"] = []
+        debug = dict(new_retrieved.get("debug") or {})
+        debug["province_filter"] = target_province
+        debug["province_filter_used"] = True
+        debug["province_filter_source"] = "retrieved_empty"
+        debug["province_filter_count"] = 0
+        new_retrieved["debug"] = debug
+        return new_retrieved
 
     def _province_fallback_retrieved(
         self,
@@ -130,7 +142,15 @@ class RagPipeline:
             )
 
         if not places:
-            return retrieved
+            new_retrieved = dict(retrieved)
+            new_retrieved["results"] = []
+            debug = dict(new_retrieved.get("debug") or {})
+            debug["province_filter"] = target_province
+            debug["province_filter_used"] = True
+            debug["province_filter_source"] = "place_store_fallback_empty"
+            debug["province_fallback_count"] = 0
+            new_retrieved["debug"] = debug
+            return new_retrieved
 
         fallback_results = []
 
@@ -183,14 +203,21 @@ class RagPipeline:
     ) -> dict[str, Any]:
         started = time.perf_counter()
 
+        parsed = self.retriever.intent_parser.parse(query)
+        top_k_effective = top_k
+        if parsed.intent == "itinerary":
+            days = parsed.days or 1
+            # Đủ địa điểm trong CONTEXT để ghép nhiều khung giờ/ngày (trần 12).
+            top_k_effective = min(12, max(top_k, min(10, days * 3)))
+
         t0 = time.perf_counter()
-        retrieved = self.retriever.retrieve(query, top_k=top_k)
+        retrieved = self.retriever.retrieve(query, top_k=top_k_effective)
 
         if target_province:
             retrieved = self._filter_retrieved_by_province(
                 retrieved=retrieved,
                 target_province=target_province,
-                top_k=top_k,
+                top_k=top_k_effective,
             )
 
             filtered_results = retrieved.get("results", []) or []
@@ -204,13 +231,13 @@ class RagPipeline:
                     query=query,
                     retrieved=retrieved,
                     target_province=target_province,
-                    top_k=top_k,
+                    top_k=top_k_effective,
                 )
 
         retrieval_ms = (time.perf_counter() - t0) * 1000
 
         t1 = time.perf_counter()
-        context = self.context_builder.build_context(retrieved, max_places=top_k)
+        context = self.context_builder.build_context(retrieved, max_places=top_k_effective)
         context_ms = (time.perf_counter() - t1) * 1000
 
         t2 = time.perf_counter()
@@ -219,7 +246,7 @@ class RagPipeline:
 
         place_ids_for_cache = [
             item.get("place_id")
-            for item in retrieved.get("results", [])[:top_k]
+            for item in retrieved.get("results", [])[:top_k_effective]
             if item.get("place_id")
         ]
 
@@ -554,383 +581,3 @@ class RagPipeline:
         )
 
         return "\n".join(lines)
-    # def run(
-    #     self,
-    #     query: str,
-    #     top_k: int = 6,
-    #     mode: str = "balanced",
-    #     include_prompt: bool = True,
-    #     target_province: str | None = None,
-    #     target_city: str | None = None,
-    # ) -> dict[str, Any]:
-    #     started = time.perf_counter()
-
-    #     t0 = time.perf_counter()
-    #     retrieved = self.retriever.retrieve(query, top_k=top_k)
-
-    #     if target_province:
-    #         retrieved = self._filter_retrieved_by_province(
-    #             retrieved=retrieved,
-    #             target_province=target_province,
-    #             top_k=top_k,
-    #         )
-
-    #         filtered_results = retrieved.get("results", []) or []
-    #         has_target_result = any(
-    #             self._place_matches_province(item, target_province)
-    #             for item in filtered_results
-    #         )
-
-    #         if not has_target_result:
-    #             retrieved = self._province_fallback_retrieved(
-    #                 query=query,
-    #                 retrieved=retrieved,
-    #                 target_province=target_province,
-    #                 top_k=top_k,
-    #             )
-
-    #             retrieval_ms = (time.perf_counter() - t0) * 1000
-
-    #     t1 = time.perf_counter()
-    #     context = self.context_builder.build_context(retrieved, max_places=top_k)
-    #     context_ms = (time.perf_counter() - t1) * 1000
-
-    #     t2 = time.perf_counter()
-    #     prompt = self.prompt_builder.build_prompt(retrieved, context)
-    #     prompt_ms = (time.perf_counter() - t2) * 1000
-
-    #     place_ids_for_cache = [
-    #         item.get("place_id")
-    #         for item in retrieved.get("results", [])[:top_k]
-    #         if item.get("place_id")
-    #     ]
-
-    #     cache_key = self.response_cache.make_key(
-    #         query=query,
-    #         runtime_mode=settings.ai_runtime_mode,
-    #         model_name=settings.gemini_model,
-    #         place_ids=place_ids_for_cache,
-    #     )
-
-    #     generation_started = time.perf_counter()
-    #     answer_payload = self._generate_answer(
-    #         prompt=prompt,
-    #         retrieved=retrieved,
-    #         query=query,
-    #         cache_key=cache_key,
-    #     )
-    #     generation_ms = (time.perf_counter() - generation_started) * 1000
-
-    #     total_ms = (time.perf_counter() - started) * 1000
-
-    #     response = {
-    #         "answer": answer_payload["answer"],
-    #         "rag_mode": mode,
-    #         "runtime_mode": settings.ai_runtime_mode,
-    #         "model_used": answer_payload["model_used"],
-    #         "fallback_used": answer_payload.get("fallback_used", False),
-    #         "places": self._extract_places(retrieved),
-    #         "warnings": self._extract_warnings(retrieved),
-    #         "latency_ms": {
-    #             "retrieval": round(retrieval_ms, 2),
-    #             "context": round(context_ms, 2),
-    #             "prompt": round(prompt_ms, 2),
-    #             "generation": round(generation_ms, 2),
-    #             "gemini": answer_payload.get("gemini_latency_ms", 0),
-    #             "total": round(total_ms, 2),
-    #         },
-    #         "debug": {
-    #             "intent": retrieved.get("intent"),
-    #             "retriever_debug": retrieved.get("debug"),
-    #             "prompt_chars": len(prompt),
-    #             "context_chars": len(context),
-    #             "generation_error": answer_payload.get("error"),
-    #             "generation_error_type": answer_payload.get("error_type"),
-    #             "retry_after_seconds": answer_payload.get("retry_after_seconds"),
-    #             "gemini_timeout": answer_payload.get("gemini_timeout", False),
-    #             "cache_hit": answer_payload.get("cache_hit", False),
-    #         },
-    #     }
-
-    #     if include_prompt:
-    #         response["prompt"] = prompt
-    #         response["context"] = context
-
-    #     self._log_request(query=query, response=response)
-
-    #     return response
-    
-    
-    
-    # def _log_request(self, query: str, response: dict[str, Any]) -> None:
-    #     try:
-    #         places = response.get("places", [])
-    #         debug = response.get("debug", {})
-
-    #         record = {
-    #             "query": query,
-    #             "runtime_mode": response.get("runtime_mode"),
-    #             "rag_mode": response.get("rag_mode"),
-    #             "model_used": response.get("model_used"),
-    #             "fallback_used": response.get("fallback_used"),
-    #             "latency_ms": response.get("latency_ms", {}),
-    #             "top_place_ids": [
-    #                 place.get("place_id") for place in places[:10]
-    #             ],
-    #             "top_place_names": [
-    #                 place.get("name") for place in places[:10]
-    #             ],
-    #             "warnings_count": len(response.get("warnings", [])),
-    #             "generation_error": debug.get("generation_error"),
-    #             "generation_error_type": debug.get("generation_error_type"),
-    #             "retry_after_seconds": debug.get("retry_after_seconds"),
-    #             "gemini_timeout": debug.get("gemini_timeout", False),
-    #             "cache_hit": debug.get("cache_hit", False),
-    #             "intent": debug.get("intent"),
-    #         }
-
-    #         self.ai_logger.log(record)
-    #     except Exception as exc:
-    #         print(f"[WARN] Failed to write AI request log: {exc}")
-
-    # def _generate_answer(
-    #     self,
-    #     prompt: str,
-    #     retrieved: dict[str, Any],
-    #     query: str,
-    #     cache_key: str,
-    # ) -> dict[str, Any]:
-    #     runtime_mode = settings.ai_runtime_mode
-
-    #     if runtime_mode in {"demo", "gemini_only"}:
-    #         return self._generate_with_gemini_or_template(
-    #             prompt=prompt,
-    #             retrieved=retrieved,
-    #             query=query,
-    #             cache_key=cache_key,
-    #         )
-
-    #     if runtime_mode == "retrieval_only":
-    #         return {
-    #             "answer": self._build_template_answer(retrieved),
-    #             "model_used": "retrieval_template",
-    #             "fallback_used": True,
-    #             "gemini_latency_ms": 0,
-    #             "gemini_timeout": False,
-    #             "error": None,
-    #             "error_type": None,
-    #             "retry_after_seconds": None,
-    #             "cache_hit": False,
-    #         }
-
-    #     if runtime_mode == "mock":
-    #         return {
-    #             "answer": self._build_mock_answer(retrieved),
-    #             "model_used": "mock",
-    #             "fallback_used": False,
-    #             "gemini_latency_ms": 0,
-    #             "gemini_timeout": False,
-    #             "error": None,
-    #             "error_type": None,
-    #             "retry_after_seconds": None,
-    #             "cache_hit": False,
-    #         }
-
-    #     if runtime_mode == "hybrid":
-    #         # Tạm thời chưa gắn LoRA, nên hybrid sẽ dùng Gemini.
-    #         # Sau này đổi thành: LoRA -> Validator -> Gemini fallback.
-    #         return self._generate_with_gemini_or_template(
-    #             prompt=prompt,
-    #             retrieved=retrieved,
-    #             query=query,
-    #             cache_key=cache_key,
-    #         )
-
-    #     return {
-    #         "answer": self._build_template_answer(retrieved),
-    #         "model_used": "unknown_runtime_template",
-    #         "fallback_used": True,
-    #         "gemini_latency_ms": 0,
-    #         "gemini_timeout": False,
-    #         "error": f"Unknown AI_RUNTIME_MODE={runtime_mode}",
-    #         "error_type": "config_error",
-    #         "retry_after_seconds": None,
-    #         "cache_hit": False,
-    #     }
-
-    # def _generate_with_gemini_or_template(
-    #     self,
-    #     prompt: str,
-    #     retrieved: dict[str, Any],
-    #     query: str,
-    #     cache_key: str,
-    # ) -> dict[str, Any]:
-    #     cached = self.response_cache.get(cache_key)
-    #     if cached:
-    #         return {
-    #             "answer": cached.get("answer", ""),
-    #             "model_used": cached.get("model_used", "gemini_cache"),
-    #             "fallback_used": False,
-    #             "gemini_latency_ms": 0,
-    #             "gemini_timeout": False,
-    #             "error": None,
-    #             "error_type": None,
-    #             "retry_after_seconds": None,
-    #             "cache_hit": True,
-    #         }
-
-    #     if self.gemini_generator is None:
-    #         return {
-    #             "answer": self._build_template_answer(retrieved),
-    #             "model_used": "template_no_gemini",
-    #             "fallback_used": True,
-    #             "gemini_latency_ms": 0,
-    #             "gemini_timeout": False,
-    #             "error": "Gemini generator is not available",
-    #             "error_type": "gemini_not_available",
-    #             "retry_after_seconds": None,
-    #             "cache_hit": False,
-    #         }
-
-    #     result = self.gemini_generator.generate(prompt)
-
-    #     if result.get("ok") and result.get("answer"):
-    #         answer_text = result["answer"]
-
-    #         self.response_cache.set(
-    #             cache_key,
-    #             {
-    #                 "query": query,
-    #                 "answer": answer_text,
-    #                 "model_used": result["model_used"],
-    #                 "runtime_mode": settings.ai_runtime_mode,
-    #             },
-    #         )
-
-    #         return {
-    #             "answer": answer_text,
-    #             "model_used": result["model_used"],
-    #             "fallback_used": False,
-    #             "gemini_latency_ms": result.get("latency_ms", 0),
-    #             "gemini_timeout": False,
-    #             "error": None,
-    #             "error_type": None,
-    #             "retry_after_seconds": None,
-    #             "cache_hit": False,
-    #         }
-
-    #     error_text = result.get("error")
-    #     error_type = result.get("error_type")
-    #     retry_after_seconds = result.get("retry_after_seconds")
-
-    #     is_timeout = bool(result.get("timeout", False))
-
-    #     if error_text and "timeout" in str(error_text).lower():
-    #         is_timeout = True
-
-    #     return {
-    #         "answer": self._build_template_answer(retrieved),
-    #         "model_used": "template_after_gemini_error",
-    #         "fallback_used": True,
-    #         "gemini_latency_ms": result.get("latency_ms", 0),
-    #         "gemini_timeout": is_timeout,
-    #         "error": error_text,
-    #         "error_type": error_type,
-    #         "retry_after_seconds": retry_after_seconds,
-    #         "cache_hit": False,
-    #     }
-
-    # def _extract_places(self, retrieved: dict[str, Any]) -> list[dict[str, Any]]:
-    #     places = []
-
-    #     for item in retrieved.get("results", []):
-    #         meta = item.get("metadata") or {}
-
-    #         places.append({
-    #             "place_id": item.get("place_id"),
-    #             "name": item.get("title"),
-    #             "province": meta.get("province"),
-    #             "city": meta.get("city"),
-    #             "area": meta.get("area"),
-    #             "category_main": meta.get("category_main"),
-    #             "category_sub": meta.get("category_sub"),
-    #             "budget_level": meta.get("budget_level_norm"),
-    #             "walking_level": meta.get("walking_level_norm"),
-    #             "kid_friendly": meta.get("kid_friendly_norm"),
-    #             "elderly_friendly": meta.get("elderly_friendly_norm"),
-    #             "slot": meta.get("slot_norm"),
-    #             "quality_score": meta.get("quality_score"),
-    #             "recommended_use": meta.get("recommended_use_norm"),
-    #             "requires_realtime_check": meta.get("requires_realtime_check"),
-    #             "score": item.get("final_score"),
-    #             "reasons": item.get("reasons", []),
-    #         })
-
-    #     return places
-
-    # def _extract_warnings(self, retrieved: dict[str, Any]) -> list[str]:
-    #     warnings = []
-    #     seen = set()
-
-    #     for item in retrieved.get("results", []):
-    #         meta = item.get("metadata") or {}
-    #         name = item.get("title")
-
-    #         if meta.get("requires_realtime_check") is True and name not in seen:
-    #             warnings.append(
-    #                 f"Nên kiểm tra thông tin thực tế trước khi đi {name}, đặc biệt là giờ mở cửa, giá vé hoặc điều kiện vận hành."
-    #             )
-    #             seen.add(name)
-
-    #     return warnings
-
-    # def _build_mock_answer(self, retrieved: dict[str, Any]) -> str:
-    #     intent = retrieved.get("intent", {})
-    #     results = retrieved.get("results", [])
-
-    #     if not results:
-    #         return "Mình chưa tìm thấy địa điểm phù hợp trong dữ liệu hiện có."
-
-    #     names = [item.get("title") for item in results[:5]]
-
-    #     if intent.get("intent") == "itinerary":
-    #         return (
-    #             "Đây là câu trả lời mock. Pipeline đã truy xuất được các địa điểm phù hợp để lập lịch trình: "
-    #             + ", ".join(names)
-    #             + "."
-    #         )
-
-    #     return (
-    #         "Đây là câu trả lời mock. Pipeline đã truy xuất được các địa điểm phù hợp: "
-    #         + ", ".join(names)
-    #         + "."
-    #     )
-
-    # def _build_template_answer(self, retrieved: dict[str, Any]) -> str:
-    #     results = retrieved.get("results", [])
-
-    #     if not results:
-    #         return "Mình chưa tìm thấy địa điểm phù hợp trong dữ liệu hiện có."
-
-    #     lines = [
-    #         "Mình đã tìm được một số địa điểm phù hợp từ dữ liệu UnuTrip:",
-    #         "",
-    #     ]
-
-    #     for index, item in enumerate(results[:5], start=1):
-    #         meta = item.get("metadata") or {}
-    #         name = item.get("title")
-    #         province = meta.get("province")
-    #         walking = meta.get("walking_level_norm")
-    #         budget = meta.get("budget_level_norm")
-
-    #         lines.append(
-    #             f"{index}. {name} ({province}) - ngân sách: {budget}, mức đi bộ: {walking}."
-    #         )
-
-    #     lines.append("")
-    #     lines.append(
-    #         "Dựa trên kết quả truy xuất, các địa điểm trên phù hợp với nhu cầu của bạn. Nếu muốn đi nhẹ nhàng và tiết kiệm, nên ưu tiên các điểm có ngân sách free và mức đi bộ easy. Nếu muốn trải nghiệm phong phú hơn, bạn có thể kết hợp thêm các điểm đảo/vịnh hoặc hoạt động tham quan gần khu vực."
-    #     )
-
-    #     return "\n".join(lines)
