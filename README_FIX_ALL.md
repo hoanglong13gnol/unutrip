@@ -1801,6 +1801,51 @@ files and the new `appPlacesStats.repository.js` (and even there, only
 
 These remain queued for Phase 6.
 
+## 18. Phase 6 Result
+
+> **Implemented on `v2/database-refactor` after Phase 5 commit `3768fb2`.** Work items followed `README_FIX_ALL_PHASE6.md`: **A** template extraction first, **B** Helmet CSP tightening second. `adminAuth.middleware.js` was not modified. `backend/rag/**`, Android, `database.sql`, `src/modules/**`, and `src/services/**` were not touched for this phase.
+
+### 18.1 Work item A — admin HTML templates
+
+- **Convention:** All server-side HTML fragments live under `backend/nodejs/src/admin/templates/` as static files. Substitution uses the delimiter `««KEY»»` (avoids collisions with JSON inside `<pre>` blocks) via `src/admin/_shared/adminTemplate.js` (`loadAdminTemplate`, `fillAdminTemplate`, `scriptNonceAttr`).
+- **Layout:** `src/admin/_shared/layout.js` now fills `templates/layout.html` instead of an inline template literal. Sidebar nav prefixes, header date, title, main content, and Tailwind `<script>` nonce slot behave like Phase 5 when `cspNonce` is absent; with middleware set, `TAILWIND_NONCE_ATTR` and per-page `SCRIPT_NONCE_ATTR` inject ` nonce="…"`.
+- **Page bodies:** `dashboard.content.html`, `users.content.html`, `destinations.content.html`, `system.content.html`, `ragAi.content.html` hold the former inline literals; route files build dynamic row/HTML fragments in JS and pass them as named slots (same escaping and interpolation logic as before).
+- **Byte-parity methodology:** Extraction was done by moving literals verbatim into `.html` files; dynamic segments are unchanged JavaScript expressions moved next to `fillAdminTemplate(...)`. Acceptable CSP-related deltas vs Phase 5 HTML: **`nonce` attributes** on `<script src="https://cdn.tailwindcss.com">` and inline `<script««SCRIPT_NONCE_ATTR»»>` blocks when the server sets a nonce (Phase 6 B). Known nondeterminism unchanged: header `HEADER_DATE` / per-row dates still use `toLocaleDateString('vi-VN', …)`.
+
+### 18.2 Work item B — CSP strategy
+
+- **Approach:** **Per-response nonces** for executable script sources. `src/middlewares/cspNonce.middleware.js` assigns `res.locals.cspNonce` (16 bytes, **base64url**) on every request **before** `helmet()` in `src/app.js`.
+- **`script-src`:** `['self', (req, res) => 'nonce-' + res.locals.cspNonce, 'https://cdn.tailwindcss.com']` — **`'unsafe-inline'` removed** from `script-src` so only nonce-bound inline scripts and the Tailwind CDN load.
+- **`script-src-attr`:** **`'unsafe-inline'` retained** so existing `onclick="…"` handlers on admin buttons/links keep working without rewriting the HTML attribute surface (matches Phase 5 markup for event attributes).
+- **Other directives:** Unchanged from Phase 5 (`style-src` still allows `'unsafe-inline'` for the layout `<style>` block; CDNs for fonts/icons unchanged).
+
+### 18.3 Files created
+
+- `backend/nodejs/src/admin/_shared/adminTemplate.js`
+- `backend/nodejs/src/admin/templates/layout.html`
+- `backend/nodejs/src/admin/templates/dashboard.content.html`
+- `backend/nodejs/src/admin/templates/users.content.html`
+- `backend/nodejs/src/admin/templates/destinations.content.html`
+- `backend/nodejs/src/admin/templates/system.content.html`
+- `backend/nodejs/src/admin/templates/ragAi.content.html`
+- `backend/nodejs/src/middlewares/cspNonce.middleware.js`
+
+### 18.4 Files modified
+
+- `backend/nodejs/src/app.js` — `cspNonceMiddleware` + Helmet `scriptSrc` nonce directive
+- `backend/nodejs/src/admin/_shared/layout.js` — template-backed layout
+- `backend/nodejs/src/admin/dashboard.admin.routes.js`
+- `backend/nodejs/src/admin/users.admin.routes.js`
+- `backend/nodejs/src/admin/destinations.admin.routes.js`
+- `backend/nodejs/src/admin/system.admin.routes.js`
+- `backend/nodejs/src/admin/ragAi.admin.routes.js`
+
+### 18.5 Verification
+
+- **`npm test`:** `Test Files 6 passed (6)` / `Tests 17 passed (17)` (including `tests/admin.router.test.js` route order lock and `tests/adminAuth.middleware.test.js`).
+- **`npm run lint`:** clean on `src/` and `tests/`.
+- **Manual smoke (recommended):** open `/admin/dashboard`, `/admin/users`, `/admin/destinations`, `/admin/rag-ai` in a browser with Basic auth; confirm no CSP console violations except none expected for current policy; exercise modals and RAG action buttons.
+
 ---
 
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

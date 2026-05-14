@@ -12,6 +12,7 @@ import { requestIdMiddleware } from "./middlewares/requestId.middleware.js";
 import { notFoundMiddleware } from "./middlewares/notFound.middleware.js";
 import { errorHandlerMiddleware } from "./middlewares/errorHandler.middleware.js";
 import { adminAuthMiddleware } from "./middlewares/adminAuth.middleware.js";
+import { cspNonceMiddleware } from "./middlewares/cspNonce.middleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,25 +24,31 @@ const __dirname = path.dirname(__filename);
 export function createApp() {
   const app = express();
 
+  app.use(cspNonceMiddleware);
+
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: "cross-origin" },
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com"],
+          scriptSrc: [
+            "'self'",
+            (req, res) => `'nonce-${res.locals.cspNonce}'`,
+            "https://cdn.tailwindcss.com"
+          ],
           scriptSrcAttr: ["'unsafe-inline'"],
           styleSrc: [
             "'self'",
             "'unsafe-inline'",
             "https://cdnjs.cloudflare.com",
-            "https://fonts.googleapis.com",
+            "https://fonts.googleapis.com"
           ],
           fontSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com", "data:"],
           imgSrc: ["'self'", "data:", "https:", "http:"],
-          connectSrc: ["'self'", "http:", "https:"],
-        },
-      },
+          connectSrc: ["'self'", "http:", "https:"]
+        }
+      }
     })
   );
 

@@ -1,0 +1,145 @@
+
+        <div class="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col overflow-hidden animate-fadeIn">
+            <div class="p-6 border-b border-gray-50 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center bg-white">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Danh sách Người dùng</h3>
+                    <p class="text-xs text-gray-400 mt-1">Tìm theo họ tên, email, SĐT hoặc ID</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                    <form method="get" action="/admin/users" class="flex gap-2">
+                        <input type="search" name="q" value="««SEARCH_Q»»" placeholder="Tìm kiếm..."
+                            class="min-w-[200px] flex-1 sm:flex-none bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                        <button type="submit" class="bg-gray-100 text-gray-700 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-gray-200 transition uppercase">
+                            <i class="fas fa-search mr-1"></i> Tìm
+                        </button>
+                        ««CLEAR_FILTER_LINK»»
+                    </form>
+                    <button type="button" onclick="showUserModal()" class="bg-blue-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-blue-700 transition uppercase shadow-lg shadow-blue-200 whitespace-nowrap">
+                        <i class="fas fa-plus mr-2"></i> Thêm người dùng
+                    </button>
+                </div>
+                <span class="bg-blue-100 text-blue-600 text-xs font-bold px-3 py-1 rounded-full uppercase self-start sm:self-auto">««USER_COUNT»» kết quả</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 text-gray-500 text-[10px] font-bold uppercase tracking-widest">
+                        <tr>
+                            <th class="px-8 py-4">ID</th>
+                            <th class="px-8 py-4">Họ và tên</th>
+                            <th class="px-8 py-4">Email</th>
+                            <th class="px-8 py-4">Số điện thoại</th>
+                            <th class="px-8 py-4 text-center">Ngày đăng ký</th>
+                            <th class="px-8 py-4 text-center">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        ««USER_ROWS»»
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="userModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-fadeIn">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 id="userModalTitle" class="text-xl font-bold text-gray-800">Thêm người dùng</h3>
+                    <button type="button" onclick="closeUserModal()" class="text-gray-400 hover:text-gray-600 transition text-2xl leading-none">&times;</button>
+                </div>
+                <form id="userForm" class="p-8 overflow-y-auto custom-scrollbar space-y-5">
+                    <input type="hidden" name="id" id="userId">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Họ và tên</label>
+                        <input type="text" name="full_name" id="userFullName" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Email</label>
+                        <input type="email" name="email" id="userEmail" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Số điện thoại</label>
+                        <input type="text" name="phone" id="userPhone" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Tuỳ chọn">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase">Mật khẩu</label>
+                        <input type="password" name="password" id="userPassword" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition" placeholder="Bắt buộc khi tạo mới">
+                        <p id="userPasswordHint" class="text-[11px] text-gray-400">Khi sửa: để trống nếu không đổi mật khẩu.</p>
+                    </div>
+                </form>
+                <div class="p-6 border-t border-gray-100 flex justify-end gap-3 bg-white">
+                    <button type="button" onclick="closeUserModal()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition">Huỷ</button>
+                    <button type="button" onclick="saveUser()" class="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-lg shadow-blue-200">Lưu</button>
+                </div>
+            </div>
+        </div>
+
+        <script««SCRIPT_NONCE_ATTR»»>
+            function showUserModal(id) {
+                const modal = document.getElementById('userModal');
+                const form = document.getElementById('userForm');
+                const title = document.getElementById('userModalTitle');
+                const hint = document.getElementById('userPasswordHint');
+                form.reset();
+                document.getElementById('userId').value = '';
+                document.getElementById('userPassword').required = false;
+
+                if (id) {
+                    title.innerText = 'Sửa người dùng';
+                    hint.innerText = 'Để trống nếu không đổi mật khẩu.';
+                    fetch('/admin/users/api/' + id)
+                        .then(function(res) { return res.json(); })
+                        .then(function(data) {
+                            if (!data || !data.id || data.success === false) {
+                                alert(data && data.message ? data.message : 'Không tải được dữ liệu');
+                                return;
+                            }
+                            document.getElementById('userId').value = data.id;
+                            document.getElementById('userFullName').value = data.full_name || '';
+                            document.getElementById('userEmail').value = data.email || '';
+                            document.getElementById('userPhone').value = data.phone || '';
+                            document.getElementById('userPassword').value = '';
+                        })
+                        .catch(function() { alert('Lỗi mạng'); });
+                } else {
+                    title.innerText = 'Thêm người dùng';
+                    hint.innerText = 'Mật khẩu bắt buộc, tối thiểu 4 ký tự.';
+                    document.getElementById('userPassword').required = true;
+                }
+                modal.classList.remove('hidden');
+            }
+
+            function closeUserModal() {
+                document.getElementById('userModal').classList.add('hidden');
+            }
+
+            async function saveUser() {
+                const form = document.getElementById('userForm');
+                if (!form.checkValidity()) {
+                    form.reportValidity();
+                    return;
+                }
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData.entries());
+                const res = await fetch('/admin/users/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const body = await res.json().catch(function() { return {}; });
+                if (res.ok && body.success) {
+                    location.reload();
+                } else {
+                    alert(body.message || 'Lỗi khi lưu');
+                }
+            }
+
+            async function deleteUser(id) {
+                if (!confirm('Bạn có chắc chắn muốn xóa người dùng này? Dữ liệu liên quan (yêu thích, đánh giá, lịch trình) có thể bị xóa theo chính sách CSDL.')) return;
+                const res = await fetch('/admin/users/delete/' + id, { method: 'POST' });
+                const body = await res.json().catch(function() { return {}; });
+                if (res.ok && body.success) {
+                    location.reload();
+                } else {
+                    alert(body.message || 'Lỗi khi xóa người dùng');
+                }
+            }
+        </script>

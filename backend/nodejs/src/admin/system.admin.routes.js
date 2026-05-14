@@ -6,55 +6,17 @@
  */
 
 import { db } from "../db.js";
+import { fillAdminTemplate, loadAdminTemplate } from "./_shared/adminTemplate.js";
 import { renderLayout } from "./_shared/layout.js";
 
 export function registerSystemAdminRoutes(router) {
   // 4. Hệ thống
   router.get("/system", async (req, res) => {
     const stats = await db.get("SELECT COUNT(*) as c FROM itineraries");
-    const content = `
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
-            <div class="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-                <h3 class="text-lg font-extrabold text-gray-800 mb-6 flex items-center">
-                    <i class="fas fa-server mr-3 text-blue-500"></i> Trạng thái Máy chủ
-                </h3>
-                <div class="space-y-4">
-                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                        <span class="text-gray-500 font-medium">Phiên bản API</span>
-                        <span class="font-bold text-slate-800">v1.2.0-stable</span>
-                    </div>
-                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                        <span class="text-gray-500 font-medium">Uptime</span>
-                        <span class="text-green-500 font-bold">100% Online</span>
-                    </div>
-                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                        <span class="text-gray-500 font-medium">Cổng hoạt động</span>
-                        <span class="font-bold text-slate-800">3000</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-                <h3 class="text-lg font-extrabold text-gray-800 mb-6 flex items-center">
-                    <i class="fas fa-database mr-3 text-emerald-500"></i> Cơ sở dữ liệu
-                </h3>
-                <div class="space-y-4">
-                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                        <span class="text-gray-500 font-medium">Loại DB</span>
-                        <span class="font-bold text-slate-800">MySQL 8.0</span>
-                    </div>
-                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                        <span class="text-gray-500 font-medium">Kết nối</span>
-                        <span class="text-blue-500 font-bold">Hoạt động</span>
-                    </div>
-                    <div class="flex justify-between items-center p-4 bg-gray-50 rounded-2xl">
-                        <span class="text-gray-500 font-medium">Số bản ghi Lịch trình</span>
-                        <span class="font-bold text-slate-800">${stats.c}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    res.send(renderLayout(content, 'system', 'Hệ thống'));
+    const cspNonce = res.locals.cspNonce;
+    const content = fillAdminTemplate(loadAdminTemplate("system.content.html"), {
+      ITINERARY_COUNT: stats.c
+    });
+    res.send(renderLayout(content, "system", "Hệ thống", cspNonce));
   });
 }
