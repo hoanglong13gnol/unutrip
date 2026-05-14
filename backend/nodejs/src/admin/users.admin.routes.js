@@ -99,39 +99,28 @@ export function registerUsersAdminRoutes(router) {
       const idNum =
         idRaw !== undefined && idRaw !== null && String(idRaw).trim() !== "" ? Number(idRaw) : NaN;
 
-      if (Number.isFinite(idNum) && idNum > 0) {
-        const dup = await usersRepository.getUserIdByEmailExcludingUser({ email, userId: idNum });
-        if (dup) {
-          return res.status(400).json({ success: false, message: "Email đã được dùng bởi tài khoản khác" });
+      const emailGate = await usersRepository.adminAssertEmailAvailableForSave({ idNum, email });
+      if (!emailGate.ok) {
+        if (emailGate.reason === "email_in_use_other") {
+          return res
+            .status(400)
+            .json({ success: false, message: "Email đã được dùng bởi tài khoản khác" });
         }
+        return res.status(400).json({ success: false, message: "Email đã tồn tại" });
+      }
+
+      if (Number.isFinite(idNum) && idNum > 0) {
+        let passwordHash = null;
         if (password) {
           if (password.length < 4) {
             return res.status(400).json({ success: false, message: "Mật khẩu mới phải có ít nhất 4 ký tự" });
           }
-          const passwordHash = bcrypt.hashSync(password, 10);
-          await usersRepository.adminUpdateUser({
-            userId: idNum,
-            fullName,
-            email,
-            phone,
-            passwordHash
-          });
-        } else {
-          await usersRepository.adminUpdateUser({
-            userId: idNum,
-            fullName,
-            email,
-            phone,
-            passwordHash: null
-          });
+          passwordHash = bcrypt.hashSync(password, 10);
         }
+        await usersRepository.adminPersistUserSave({ idNum, fullName, email, phone, passwordHash });
         return res.json({ success: true });
       }
 
-      const dup = await usersRepository.getUserIdByEmail(email);
-      if (dup) {
-        return res.status(400).json({ success: false, message: "Email đã tồn tại" });
-      }
       if (!password || password.length < 4) {
         return res.status(400).json({
           success: false,
@@ -139,14 +128,7 @@ export function registerUsersAdminRoutes(router) {
         });
       }
       const passwordHash = bcrypt.hashSync(password, 10);
-      await usersRepository.createUser({
-        fullName,
-        email,
-        passwordHash,
-        phone,
-        avatar: null,
-        preferencesJson: JSON.stringify([])
-      });
+      await usersRepository.adminPersistUserSave({ idNum, fullName, email, phone, passwordHash });
       return res.json({ success: true });
     } catch (e) {
       return res.status(500).json({ success: false, message: e.message });

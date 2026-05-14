@@ -1846,6 +1846,28 @@ These remain queued for Phase 6.
 - **`npm run lint`:** clean on `src/` and `tests/`.
 - **Manual smoke (recommended):** open `/admin/dashboard`, `/admin/users`, `/admin/destinations`, `/admin/rag-ai` in a browser with Basic auth; confirm no CSP console violations except none expected for current policy; exercise modals and RAG action buttons.
 
+## 19. Phase 7 Result
+
+> **Implemented on `v2/database-refactor` per `README_FIX_ALL_PHASE7.md`.** Scope: work item **A** only (`POST /admin/users/save`). `adminAuth.middleware.js` was not modified. Optional items B (destination images), C (DTO import paths), and D (CSP `script-src-attr`) were not started.
+
+### 19.1 Work item A — admin user save layering
+
+- **Goal:** Move duplicate-email lookups and create/update persistence for `POST /admin/users/save` into `repositories/users.repository.js` while keeping HTTP statuses, JSON envelopes, Vietnamese `message` strings, and validation order byte-compatible with Phase 6 (including create path: duplicate email must be reported before new-password rules run).
+- **`bcrypt.hashSync(…, 10)`** remains in **`users.admin.routes.js`** after field validation; the repository receives only prepared `passwordHash` values (or `null` on update to retain the existing hash).
+- **New repository exports:**
+  - `adminAssertEmailAvailableForSave({ idNum, email })` — wraps `getUserIdByEmailExcludingUser` / `getUserIdByEmail` and returns machine `reason` codes mapped in the route to the existing Vietnamese messages.
+  - `adminPersistUserSave({ idNum, fullName, email, phone, passwordHash })` — branches update vs insert via existing `adminUpdateUser` and `createUser` (same SQL as before).
+
+### 19.2 Files modified
+
+- `backend/nodejs/src/repositories/users.repository.js`
+- `backend/nodejs/src/admin/users.admin.routes.js`
+
+### 19.3 Verification
+
+- **`npm test`:** `Test Files 6 passed (6)` / `Tests 17 passed (17)` (`tests/admin.router.test.js`, `tests/adminAuth.middleware.test.js` unchanged intent).
+- **`npm run lint`:** clean on `src/` and `tests/`.
+
 ---
 
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

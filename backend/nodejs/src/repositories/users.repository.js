@@ -52,6 +52,55 @@ export async function updateUserAvatar({ userId, avatarUrl }) {
   await db.run("UPDATE users SET avatar = ? WHERE id = ?", [avatarUrl, userId]);
 }
 
+/**
+ * Phase 7 — duplicate-email checks for `POST /admin/users/save` before password rules run
+ * (create path must return “Email đã tồn tại” even when the new password is invalid).
+ *
+ * @param {{ idNum: number, email: string }} p
+ * @returns {Promise<{ ok: true } | { ok: false, reason: "email_in_use_other" | "email_exists" }>}
+ */
+export async function adminAssertEmailAvailableForSave({ idNum, email }) {
+  if (Number.isFinite(idNum) && idNum > 0) {
+    const dup = await getUserIdByEmailExcludingUser({ email, userId: idNum });
+    if (dup) {
+      return { ok: false, reason: "email_in_use_other" };
+    }
+    return { ok: true };
+  }
+  const dup = await getUserIdByEmail(email);
+  if (dup) {
+    return { ok: false, reason: "email_exists" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Phase 7 — `INSERT` / `UPDATE` for admin user save after email availability and password rules
+ * in the route. `passwordHash` null/undefined on update = keep existing password.
+ *
+ * @param {{ idNum: number, fullName: string, email: string, phone: string | null, passwordHash: string | null }} p
+ */
+export async function adminPersistUserSave({ idNum, fullName, email, phone, passwordHash }) {
+  if (Number.isFinite(idNum) && idNum > 0) {
+    await adminUpdateUser({
+      userId: idNum,
+      fullName,
+      email,
+      phone,
+      passwordHash: passwordHash ?? null
+    });
+    return;
+  }
+  await createUser({
+    fullName,
+    email,
+    passwordHash,
+    phone,
+    avatar: null,
+    preferencesJson: JSON.stringify([])
+  });
+}
+
 /** Cập nhật user từ admin. `passwordHash` null/undefined = giữ mật khẩu cũ. */
 export async function adminUpdateUser({ userId, fullName, email, phone, passwordHash }) {
   if (passwordHash) {
