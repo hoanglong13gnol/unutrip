@@ -1,8 +1,0 @@
-{
-  "index_file": "E:\\UNUtrip\\backend\\rag\\data\\indexes\\bm25_index.pkl",
-  "document_count": 22368,
-  "avg_tokens": 128.24,
-  "tfidf_features": 33144,
-  "corpus_sha256": "8f46e2f84dd08efaaae15a8a99446280f39e730340adff03dba8d812b11997b6",
-  "bm25_sha256": "6029f66e2b493cf67477e6c2d55f9d6d59808cfb2053ba46d9489a917a4c88e3"
-}

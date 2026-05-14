@@ -26,6 +26,11 @@ local.properties
 node_modules/
 backend/nodejs/node_modules/
 
+# RAG generated intermediates & logs (keep repo lean; regenerate locally)
+backend/rag/_archive/
+backend/rag/reports/
+backend/rag/data/image_pipeline/reports/
+
 # Dependencies
 node_modules/
 **/node_modules/

@@ -120,6 +120,8 @@ python jobs/build_rag_artifacts.py
 uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
+Thư mục **`backend/rag/_archive/`**, **`backend/rag/reports/`** và **`backend/rag/data/image_pipeline/reports/`** là output/backup của pipeline (CSV, JSON, `.jsonl`). Chúng được **`.gitignore`** để giữ repo nhẹ; sau khi clone cần chạy lại các script tương ứng nếu bạn phụ thuộc các file đó cục bộ.
+
 ### 5. Android
 
 - Tạo **`local.properties`** (đã gitignore) ở root repo Gradle:
@@ -131,6 +133,7 @@ API_BASE_URL=http://10.0.2.2:3000/api/
 
 - **Product flavors**: `dev` (suffix `com.smarttravel.dev`) và `prod`.
 - Build ví dụ: variant **`devDebug`** trong Android Studio.
+- Unit test / Lint (như CI): tại root Gradle — `./gradlew testDevDebugUnitTest lintDevDebug`
 
 `BASE_URL` và `GEMINI_API_KEY` trong `BuildConfig` lấy từ `local.properties` (không hard-code key trong `build.gradle`).
 
