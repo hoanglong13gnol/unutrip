@@ -48,19 +48,33 @@ Nhánh **`main`** trên GitHub có thể là snapshot cũ; code báo cáo nằm 
 
 ---
 
-## 4. Cơ sở dữ liệu MySQL
+## 4. Cơ sở dữ liệu MySQL (quan trọng: **`app_places`**)
 
-`docker compose` **không** tự import toàn bộ schema + dữ liệu; sau khi container **mysql** healthy, bạn cần **import** giống máy phát triển (ví dụ dump SQL, hoặc `backend/nodejs/database.sql` + migration trong `database/migrations/` tùy quy trình của bạn).
+Backend Node đọc danh sách địa điểm từ bảng **`app_places`**, **không** đọc trực tiếp **`destinations`**. Import chỉ **`backend/nodejs/database.sql`** sẽ tạo **`destinations` + INSERT** nhưng app vẫn có thể hiện **0 địa điểm** nếu **`app_places` trống**.
 
-Ví dụ import file SQL từ máy host (đường dẫn file chỉnh lại cho đúng):
+Quy trình gọn cho laptop báo cáo (đổi `-u/-p`/DB nếu bạn đã chỉnh trong `.env`):
 
 ```powershell
 docker compose up -d mysql
 # Đợi mysql healthy, rồi:
+
+# (A) Legacy schema + ví dụ dữ liệu vào `destinations`
 Get-Content .\backend\nodejs\database.sql -Raw | docker compose exec -T mysql mysql -uunutrip -punutrip_pass unudata
+
+# (B) Tạo bảng `app_places`
+Get-Content .\database\migrations\001_create_app_places.sql -Raw | docker compose exec -T mysql mysql -uunutrip -punutrip_pass unudata
+
+# (C) Copy dữ liệu từ `destinations` → `app_places` (bản script tương thích `database.sql`)
+Get-Content .\database\quick_populate_app_places_from_legacy_database_sql.sql -Raw | docker compose exec -T mysql mysql -uunutrip -punutrip_pass unudata
 ```
 
-- User/password/database phải **khớp** `.env` / `docker-compose.yml` (mặc định thường là user `unutrip`, DB `unudata` — xem biến `MYSQL_*`, `DB_NAME`).
+Kiểm tra nhanh có bản ghi:
+
+```powershell
+docker compose exec -T mysql mysql -uunutrip -punutrip_pass unudata -e "SELECT COUNT(*) AS n FROM app_places;"
+```
+
+> Nếu bạn dùng **dump v2 đầy đủ** trên máy phát triển, không dùng bước (C): hãy chạy chuỗi migration trong `database/migrations/README.md` (đặc biệt **`006_populate_app_places.sql`** khi legacy đã có đủ cột).
 
 ---
 
