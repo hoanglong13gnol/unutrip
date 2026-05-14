@@ -1,6 +1,7 @@
-name: Backend CI
+name: Backend & RAG CI
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - "backend/rag/**"
