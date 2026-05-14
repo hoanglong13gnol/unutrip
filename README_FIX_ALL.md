@@ -862,4 +862,150 @@ Start now by reading README_FIX_ALL.md only, then list the files you intend to c
 
 ---
 
+## 14. Phase 2 Result
+
+> Implemented on the `v2/database-refactor` branch on top of the Phase 1 baseline
+> commit `784f191`. This section is the running log of what actually shipped in
+> Phase 2 and supersedes the high-level plan in §9 for that phase.
+
+### 14.1 What was done
+
+Phase 2 was executed as a **safe module shell migration**, not a deep business
+refactor. For every feature listed in §9 the existing route file was split into
+a thin route + controller pair under `src/modules/<feature>/`, while leaving
+services, repositories, helpers, admin, db, lib, config, schemas, and tests
+untouched.
+
+- Routes files now only declare paths/methods and apply `authMiddleware` /
+  `upload` middleware exactly where the old route did.
+- Controllers contain the verbatim handler logic from the old route handlers
+  (same validation, same try/catch, same response shapes, same error codes,
+  same `console.log` lines, same Vietnamese strings).
+- `src/routes/index.js` now imports the eight `register*Routes` functions
+  from the new module paths.
+- The old `src/routes/*.routes.js` files were converted into one-line
+  compatibility re-export shims so any external import of those paths keeps
+  working.
+- No service, repository, helper, schema, lib, config, db, admin, RAG, Android,
+  or schema file was modified. No new dependency was added.
+
+### 14.2 Files created (16)
+
+```
+backend/nodejs/src/modules/
+├── ai/
+│   ├── ai.controller.js
+│   └── ai.routes.js
+├── auth/
+│   ├── auth.controller.js
+│   └── auth.routes.js
+├── destinations/
+│   ├── destinations.controller.js
+│   └── destinations.routes.js
+├── favorites/
+│   ├── favorites.controller.js
+│   └── favorites.routes.js
+├── health/
+│   ├── health.controller.js
+│   └── health.routes.js
+├── itineraries/
+│   ├── itineraries.controller.js
+│   └── itineraries.routes.js
+├── reviews/
+│   ├── reviews.controller.js
+│   └── reviews.routes.js
+└── users/
+    ├── users.controller.js
+    └── users.routes.js
+```
+
+### 14.3 Files modified (9 — all in `src/routes/`)
+
+- `src/routes/index.js` — imports from `../modules/<feature>/<feature>.routes.js`.
+- `src/routes/health.routes.js` — re-export shim.
+- `src/routes/auth.routes.js` — re-export shim.
+- `src/routes/users.routes.js` — re-export shim.
+- `src/routes/favorites.routes.js` — re-export shim.
+- `src/routes/destinations.routes.js` — re-export shim.
+- `src/routes/reviews.routes.js` — re-export shim.
+- `src/routes/itineraries.routes.js` — re-export shim.
+- `src/routes/ai.routes.js` — re-export shim.
+
+### 14.4 Files explicitly NOT modified
+
+`backend/nodejs/src/services/**`, `backend/nodejs/src/repositories/**`,
+`backend/nodejs/src/routes/helpers.js`, `backend/nodejs/src/routes/upload.js`,
+`backend/nodejs/src/admin.js`, `backend/nodejs/src/db.js`,
+`backend/nodejs/src/config/**`, `backend/nodejs/src/lib/**`,
+`backend/nodejs/src/schemas/**`, `backend/nodejs/src/auth.js`,
+`backend/nodejs/src/utils.js`, `backend/nodejs/src/app.js`,
+`backend/nodejs/src/middlewares/**`, `backend/nodejs/src/shared/**`,
+all existing tests, `package.json`, `package-lock.json`, `database.sql`,
+`.env`, `.env.example`, `backend/rag/**`, and every Android source.
+
+### 14.5 Verification
+
+- **Endpoint paths unchanged.** Every path in the §4.1 inventory is still
+  served, including the `/api/itineraries/create-from-option` and
+  `/api/itineraries/create-from-selection` routes which remain registered by
+  the ai module (their public path stays under `/api/itineraries/*`).
+- **Response shapes unchanged.** Controllers reproduce the original response
+  bodies field-for-field: `{ success, message, token, user }` for auth,
+  `{ success, data, total, page, limit }` for paged lists, `apiOk(...)` for
+  envelope endpoints, raw RAG pass-through for `/ai/itinerary-preview` and
+  `/ai/itinerary-options`, and `{ success, message }` for ack endpoints.
+  Vietnamese strings (`"Đăng nhập thành công"`, `"Đã thêm vào lịch trình"`,
+  `"Không map được địa điểm nào sang destinations.id"`, etc.) preserved
+  byte-for-byte.
+- **Auth middleware placement unchanged.** Every route that previously took
+  `authMiddleware` still does, in the same position relative to the multipart
+  middleware where applicable.
+- **Upload middleware placement unchanged.** `upload.single("avatar")` still
+  wraps `POST /api/users/avatar`; `upload.array("images", 3)` still wraps
+  `POST /api/reviews`. Field names (`avatar`, `images`) preserved.
+- **SQL unchanged.** No service or repository SQL was touched. The raw-SQL
+  transaction inside `/api/ai/suggest-itinerary` was moved verbatim into
+  `ai.controller.js#suggestItinerary` (no logic change, no transactional
+  upgrade — that remains Phase 3 work).
+- **`createItineraryFromAiOption` / `createItineraryFromAiSelection`
+  unchanged.** Both still call the existing non-transactional service
+  functions; making them transactional is Phase 3.
+- **DB schema unchanged.** `database.sql` not opened.
+- **Android untouched.** No file under `app/` modified.
+- **`backend/rag` untouched.** No FastAPI file modified.
+- **`npm test` is green.** `4 test files passed, 7 tests passed` (same as
+  Phase 1; no test regression). The `tests/ai-rag-chat.route.test.js` suite
+  exercises the full app + module-routed handler and still returns the
+  documented envelope.
+- **App boots.** `createApp()` instantiates cleanly with all eight routers
+  mounted through the new modules.
+
+### 14.6 Special-case audits
+
+- The embedded raw-SQL transaction in `POST /api/ai/suggest-itinerary` was
+  **only relocated** from `src/routes/ai.routes.js` into
+  `src/modules/ai/ai.controller.js#suggestItinerary`. SQL strings, parameter
+  order, `'planned'` status literal, default times `"08:00"` / `"09:00"`,
+  and the rollback/release sequence are identical. The `console.log("[AI]
+  Save AI Itinerary Request:", ...)` in `saveAiItinerary` is also preserved
+  for Phase 3 cleanup.
+- The `routes/index.js` registration order is unchanged
+  (health → auth → users → favorites → destinations → reviews → itineraries
+  → ai), so Express still matches `/destinations/featured` and
+  `/destinations/nearby` before the parameterized `/destinations/:id`.
+
+### 14.7 What is NOT done in Phase 2 (deferred to Phase 3+)
+
+- Wrapping `createItineraryFromAiOption` / `createItineraryFromAiSelection`
+  in `withTransaction`.
+- Moving the raw-SQL transaction in `suggestItinerary` into a service.
+- Removing the `console.log(req.body)` in `save-ai`.
+- Splitting `routes/helpers.js` into per-module DTO files.
+- Splitting `admin.js`.
+- Adding new test coverage per module.
+
+These remain queued for Phases 3–5 per §9.
+
+---
+
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

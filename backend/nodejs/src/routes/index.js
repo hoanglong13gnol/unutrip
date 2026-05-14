@@ -1,12 +1,12 @@
 import express from "express";
-import { registerHealthRoutes } from "./health.routes.js";
-import { registerAuthRoutes } from "./auth.routes.js";
-import { registerUserRoutes } from "./users.routes.js";
-import { registerFavoriteRoutes } from "./favorites.routes.js";
-import { registerDestinationRoutes } from "./destinations.routes.js";
-import { registerReviewRoutes } from "./reviews.routes.js";
-import { registerItineraryRoutes } from "./itineraries.routes.js";
-import { registerAiRoutes } from "./ai.routes.js";
+import { registerHealthRoutes } from "../modules/health/health.routes.js";
+import { registerAuthRoutes } from "../modules/auth/auth.routes.js";
+import { registerUserRoutes } from "../modules/users/users.routes.js";
+import { registerFavoriteRoutes } from "../modules/favorites/favorites.routes.js";
+import { registerDestinationRoutes } from "../modules/destinations/destinations.routes.js";
+import { registerReviewRoutes } from "../modules/reviews/reviews.routes.js";
+import { registerItineraryRoutes } from "../modules/itineraries/itineraries.routes.js";
+import { registerAiRoutes } from "../modules/ai/ai.routes.js";
 
 export function buildRouter() {
   const router = express.Router();

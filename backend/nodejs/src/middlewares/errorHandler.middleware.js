@@ -3,18 +3,25 @@ import { HttpError } from "../shared/http/HttpError.js";
 /**
  * Central Express error middleware.
  *
- * Today no existing route reaches here — every legacy handler still builds its
- * own response. The middleware is a forward-looking safety net: once Phase 2+
- * handlers start calling `next(new HttpError(...))`, this is the single place
- * that turns those errors into JSON.
+ * Catches anything reaching `next(err)`. Built so it can be a forward-looking
+ * safety net for Phase 2+ controllers without breaking the legacy handlers
+ * that still build their own response.
  *
- * Behavior is deliberately conservative:
+ * Behavior:
  *  - If headers were already sent, delegate so Express closes the socket.
  *  - HttpError → use its status/message; other errors → 500.
  *  - In production, hide non-HttpError messages behind "Internal server error".
- *  - Always include `data: null` for envelope consistency, plus `requestId`
- *    when the requestId middleware ran first and `details` when the HttpError
- *    carries them.
+ *  - Body always includes `data: null` for envelope consistency, plus
+ *    `requestId` when the requestId middleware ran first and `details` when
+ *    the HttpError carries them.
+ *
+ * Logging policy:
+ *  - 5xx errors → `console.error` (full stack in dev, message-only in prod).
+ *    These represent server-side bugs the operator must see.
+ *  - 4xx errors → no log. They are client mistakes (bad payloads, missing
+ *    auth, unknown route — including the routine `/favicon.ico` 404 from
+ *    browsers). Morgan already records the request line with status, so
+ *    silencing 4xx here prevents log spam without losing observability.
  *
  * @param {unknown} err
  * @param {import("express").Request} req
@@ -47,21 +54,23 @@ export function errorHandlerMiddleware(err, req, res, next) {
     body.requestId = req.requestId;
   }
 
-  if (process.env.NODE_ENV === "production") {
-    console.error("[error]", {
-      status,
-      requestId: req && req.requestId,
-      path: req && req.originalUrl,
-      message: err && err.message,
-    });
-  } else {
-    console.error("[error]", {
-      status,
-      requestId: req && req.requestId,
-      path: req && req.originalUrl,
-      message: err && err.message,
-      stack: err && err.stack,
-    });
+  if (status >= 500) {
+    if (process.env.NODE_ENV === "production") {
+      console.error("[error]", {
+        status,
+        requestId: req && req.requestId,
+        path: req && req.originalUrl,
+        message: err && err.message,
+      });
+    } else {
+      console.error("[error]", {
+        status,
+        requestId: req && req.requestId,
+        path: req && req.originalUrl,
+        message: err && err.message,
+        stack: err && err.stack,
+      });
+    }
   }
 
   res.status(status).json(body);
