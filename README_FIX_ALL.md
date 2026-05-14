@@ -1216,4 +1216,300 @@ These remain queued for Phases 4–5 per §9.
 
 ---
 
+## 16. Phase 4 Result
+
+> Implemented on the `v2/database-refactor` branch on top of the Phase 3
+> commit, against the plan in `README_FIX_ALL_PHASE4.md`. This section
+> is the running log of what actually shipped in Phase 4 and supersedes
+> the high-level plan in §9 for that phase.
+
+### 16.1 What was done
+
+Phase 4 was the **admin module shell migration + admin auth** pass. The
+~2000-line monolithic `src/admin.js` was split into a thin `Router()`
+factory plus per-section route modules and shared helpers — handler
+bodies are byte-identical copies of the originals, so every byte of
+rendered HTML, every JSON response, every URL path, every redirect
+target, every form field name, and every Vietnamese string under
+`/admin/**` is preserved. An optional, env-gated HTTP Basic Auth gate
+was added in front of the `/admin` mount with default-open dev-mode
+behavior so existing local workflows keep working.
+
+All four work items (A, B required; C, D optional pilots) were
+implemented:
+
+- **Work item A — `src/admin.js` split.** The original 1997-line file
+  was replaced with a one-line re-export shim
+  (`export { buildAdminRouter } from "./admin/index.js"`). The
+  implementation now lives in `src/admin/`:
+  - `src/admin/index.js` — `buildAdminRouter()` factory; instantiates an
+    `express.Router()` and registers six section modules in the same
+    order they appeared in the old file (`dashboard`, `users`,
+    `destinations`, `system`, `ragAi`, `aiReport`).
+  - `src/admin/_shared/escape.js` — `escapeHtml`, `renderJsonBox`.
+  - `src/admin/_shared/categories.js` — `APP_PLACE_CATEGORY_ENUM`,
+    `normalizeAppPlaceCategory` (with the `historical → heritage` and
+    `entertainment → other` mappings preserved exactly).
+  - `src/admin/_shared/ragHttp.js` — `formatRagFetchError`,
+    `ragHeadersForPath`, `fetchRagJson` (3000 ms default GET timeout),
+    `postRagJson` (5000 ms default POST timeout). No retry semantics; no
+    use of `src/lib/ragUpstream.js`. Admin operators rely on the raw
+    upstream error shape (`{ ok:false, status:0, url, data:{ error } }`).
+  - `src/admin/_shared/layout.js` — `renderLayout`. The original
+    template literal contained useless `\:`, `\/`, `\[`, `\]` escapes
+    inside the embedded `<style>` block (JS silently drops them at
+    parse time, so they never reached the rendered HTML). The Phase-4
+    copy writes those characters directly, which avoids
+    `no-useless-escape` lint findings in the new file (the rule is only
+    silenced for the legacy `src/admin.js` path in `eslint.config.js`)
+    while producing byte-identical HTML — confirmed by a side-by-side
+    diff of `renderLayout("CONTENT", "dashboard")` output against the
+    original (`length === 7832` identical match).
+  - Six section route files
+    (`dashboard.admin.routes.js`, `users.admin.routes.js`,
+    `destinations.admin.routes.js`, `system.admin.routes.js`,
+    `ragAi.admin.routes.js`, `aiReport.admin.routes.js`) export a
+    `register*AdminRoutes(router)` function whose `router.get(...)` /
+    `router.post(...)` calls use byte-identical handler bodies. Path
+    strings, status codes, redirect targets, default RAG timeouts
+    (`3000` / `5000` / `RAG_ADMIN_DEBUG_TIMEOUT_MS`), inline
+    `<script>` blocks, Tailwind classes, button labels, table columns,
+    form field names, and Vietnamese copy (including
+    `"Tìm theo họ tên, email, SĐT hoặc ID"`, `"Quản lý Người dùng"`,
+    `"Quản lý Địa điểm"`, `"Hệ thống"`, `"Báo cáo đã được tạo thành công!"`,
+    `"Không có người dùng phù hợp."`, the destination category enum
+    options, the RAG debug-query helper text, and the
+    `"đi biển ở Khánh Hòa"` default query) are preserved unchanged.
+  - All 18 admin routes register in the same order:
+    `GET /dashboard`, `GET /users`, `GET /users/api/:id`,
+    `POST /users/save`, `POST /users/delete/:id`, `GET /destinations`,
+    `GET /destinations/api/:id`, `POST /destinations/save`,
+    `POST /destinations/delete/:id`, `GET /system`, `GET /rag-ai`,
+    `POST /rag-ai/reload-place-store`, `POST /rag-ai/clear-cache`,
+    `GET /rag-ai/data-quality-issues`, `GET /rag-ai/ai-metrics`,
+    `GET /rag-ai/ai-logs`, `POST /rag-ai/debug-query`,
+    `GET /ai-report` — verified by introspecting `buildAdminRouter().stack`.
+- **Work item B — `adminAuth.middleware.js`.** New file
+  `src/middlewares/adminAuth.middleware.js` exports
+  `adminAuthMiddleware(req, res, next)`:
+  - When BOTH `ADMIN_BASIC_USER` and `ADMIN_BASIC_PASS` are set, decodes
+    `Authorization: Basic <base64>`, splits on the first `:`, and
+    constant-time-compares both halves using a small wrapper around
+    `crypto.timingSafeEqual` that length-pads inputs to a common length
+    (preventing the equal-length precondition from leaking the password
+    length via thrown exceptions). On any mismatch / missing header /
+    wrong scheme / malformed base64, responds `401` with
+    `WWW-Authenticate: Basic realm="UnuTrip Admin"` and plain-text body
+    `Unauthorized`.
+  - When either env var is missing, logs a **one-time**
+    `[adminAuth] ADMIN_BASIC_USER/ADMIN_BASIC_PASS not set — /admin is
+    unauthenticated (dev mode)` warning via `console.warn` (guarded by
+    a module-level `let warned = false` so repeated test imports do
+    not spam) and calls `next()` — preserving the existing default-open
+    behavior so local development without operator credentials still
+    works.
+  - No new dependency added. `crypto` and `Buffer` are both from Node's
+    standard library.
+  - Wired into `src/app.js` by adding ONE import line
+    (`import { adminAuthMiddleware } from "./middlewares/adminAuth.middleware.js";`)
+    and inserting `adminAuthMiddleware` between the mount path and the
+    factory call:
+    `app.use("/admin", adminAuthMiddleware, buildAdminRouter());`. Every
+    other line of `app.js` is unchanged.
+  - Documented in `.env.example` at the repo root with two **commented**
+    placeholder lines (`# ADMIN_BASIC_USER=`, `# ADMIN_BASIC_PASS=`)
+    appended directly after the existing `# RAG_ADMIN_API_KEY=` line.
+    The defaults stay commented so dev-mode-open behavior is preserved.
+- **Work item C (optional pilot) — users-admin repository extraction.**
+  Two new functions were added to `src/repositories/users.repository.js`
+  without modifying any existing one:
+  - `getAdminUserDetailById(id)` — exactly the SQL
+    `SELECT id, full_name, email, phone, avatar, preferences_json, created_at FROM users WHERE id = ?`
+    used by `GET /admin/users/api/:id`. Returns whatever `db.get` returns
+    (`undefined` for a missing row), so the admin handler's
+    `if (!user) return 404` branch keeps the same trigger condition.
+  - `deleteUserById(id)` — `DELETE FROM users WHERE id = ?` used by
+    `POST /admin/users/delete/:id`. SQL preserved verbatim.
+  - The two inline `db.get` / `db.run` calls in
+    `src/admin/users.admin.routes.js` were replaced with
+    `usersRepository.getAdminUserDetailById(id)` and
+    `usersRepository.deleteUserById(id)`. The validation paths
+    (`ID không hợp lệ`, `Không tìm thấy người dùng`,
+    `Không xóa được (kiểm tra ràng buộc CSDL).`), the
+    `bcrypt.hashSync(password, 10)` calls in `POST /users/save`, and
+    every other line of the handler are unchanged.
+  - The listing query (with and without the `?q=` search filter) and
+    the `POST /users/save` INSERT/UPDATE were intentionally left as
+    inline `db.*` calls for this pilot. The plan's mention of
+    `LIMIT/OFFSET` and `COUNT(*)` does not match the actual admin SQL
+    (which paginates client-side after a full `ORDER BY created_at DESC`
+    fetch); rather than invent SQL semantics that did not exist, the
+    Phase-4 pilot stuck to the obvious, low-risk replacements.
+- **Work item D (optional pilot) — destinations-admin repository
+  extraction.** Same pattern applied to
+  `src/repositories/destinations.repository.js`:
+  - `getAdminDestinationDetailById(id)` — exactly the SQL
+    `SELECT id, name, category, description, city, province, address, latitude, longitude, open_time, close_time FROM app_places WHERE id = ?`
+    used by `GET /admin/destinations/api/:id`. Distinct from the
+    pre-existing `getDestinationById({ userId, id })` because the admin
+    response shape does NOT include the `is_favorite` join. Returns
+    `db.get`'s native result (`undefined` for missing rows) so the
+    `if (!dest) return 404` branch keeps the same trigger condition.
+  - `deleteDestinationById(id)` — `DELETE FROM app_places WHERE id = ?`
+    used by `POST /admin/destinations/delete/:id`. SQL preserved
+    verbatim.
+  - The two inline `db.get` / `db.run` calls in
+    `src/admin/destinations.admin.routes.js` were replaced with
+    `destinationsRepository.getAdminDestinationDetailById(id)` and
+    `destinationsRepository.deleteDestinationById(id)`.
+  - The `POST /destinations/save` handler (which touches `app_places`,
+    `place_images`, and `place_id_map`) was intentionally left
+    untouched — the plan explicitly defers that refactor to Phase 5.
+  - The listing query (with and without `?q=` search) was also left as
+    an inline `db.query` for this pilot.
+
+### 16.2 Files modified (5)
+
+```
+.env.example                                          ← work item B: 2 commented placeholders after RAG_ADMIN_API_KEY
+backend/nodejs/src/
+├── admin.js                                          ← work item A: replaced 1997-line file with a 6-line re-export shim
+├── app.js                                            ← work item B: +1 import line, /admin mount now has adminAuthMiddleware between path and factory
+└── repositories/
+    ├── destinations.repository.js                    ← work item D: +2 new exports (getAdminDestinationDetailById, deleteDestinationById)
+    └── users.repository.js                           ← work item C: +2 new exports (getAdminUserDetailById, deleteUserById)
+```
+
+No existing repository function was renamed, removed, or had its body
+modified. No SQL string outside the four new functions was rewritten.
+
+### 16.3 Files created (12)
+
+```
+backend/nodejs/src/
+├── admin/
+│   ├── index.js                                      ← buildAdminRouter() factory, registers 6 section modules
+│   ├── _shared/
+│   │   ├── categories.js                             ← APP_PLACE_CATEGORY_ENUM, normalizeAppPlaceCategory
+│   │   ├── escape.js                                 ← escapeHtml, renderJsonBox
+│   │   ├── layout.js                                 ← renderLayout (byte-identical HTML output)
+│   │   └── ragHttp.js                                ← formatRagFetchError, ragHeadersForPath, fetchRagJson, postRagJson
+│   ├── aiReport.admin.routes.js                      ← GET /ai-report
+│   ├── dashboard.admin.routes.js                     ← GET /dashboard
+│   ├── destinations.admin.routes.js                  ← /destinations CRUD
+│   ├── ragAi.admin.routes.js                         ← /rag-ai dashboard + 6 RAG action proxies
+│   ├── system.admin.routes.js                        ← GET /system
+│   └── users.admin.routes.js                         ← /users CRUD
+└── middlewares/
+    └── adminAuth.middleware.js                       ← HTTP Basic Auth gate (env-gated, default-open)
+```
+
+Eleven files for work item A + one for work item B = exactly the
+twelve-file budget allowed by `README_FIX_ALL_PHASE4.md §5.2`.
+
+### 16.4 Files explicitly NOT modified
+
+`backend/nodejs/src/modules/**` (all Phase 2 module files),
+`backend/nodejs/src/routes/**` (legacy shims and `routes/index.js`),
+`backend/nodejs/src/services/**` (Phase 3 transactional services),
+`backend/nodejs/src/repositories/*.repository.js` EXCEPT the two
+admin-pilot files (and even there, only **new** functions were added —
+no existing function body was touched),
+`backend/nodejs/src/db.js`, `backend/nodejs/src/auth.js`,
+`backend/nodejs/src/utils.js`, `backend/nodejs/src/index.js`,
+`backend/nodejs/src/config/**`, `backend/nodejs/src/lib/**`,
+`backend/nodejs/src/schemas/**`, `backend/nodejs/src/shared/**`,
+`backend/nodejs/src/middlewares/{requestId,notFound,errorHandler}.middleware.js`,
+`backend/nodejs/tests/**`, `backend/nodejs/package.json`,
+`backend/nodejs/package-lock.json`, `backend/nodejs/eslint.config.js`,
+`backend/nodejs/vitest.config.js`, `backend/nodejs/.prettierrc.json`,
+`backend/nodejs/database.sql`, `backend/nodejs/server.py`,
+`backend/nodejs/test_ai.js`, `backend/nodejs/seed.js`, `.env`,
+`backend/rag/**`, and every Android source.
+
+### 16.5 Verification
+
+- **`npm test` is green.** `Test Files 4 passed (4)` /
+  `Tests 7 passed (7)` — identical to the Phase 1/2/3 baseline. The
+  `ragContract`, `ragUpstream`, `health`, and `ai-rag-chat.route` suites
+  all still pass. No new tests were added (Phase 5 owns testing).
+- **`npm run lint` is clean.** Zero ESLint findings across `src/` and
+  `tests/`. The `no-useless-escape` rule, which is silenced for the
+  legacy `src/admin.js` path only, does not fire on any new file under
+  `src/admin/` because the CSS-selector backslashes that triggered it
+  originally were replaced with the bare characters they decoded to
+  — the rendered HTML is identical to the pre-Phase-4 output (verified
+  by a one-shot byte-by-byte diff of `renderLayout` with both
+  implementations side by side; both produced an identical 7,832-byte
+  string for `renderLayout("CONTENT", "dashboard")`).
+- **Admin router registration order preserved.** Booting the new
+  `buildAdminRouter()` and walking `router.stack` reports exactly the
+  same 18 entries in the same order as the old `admin.js`.
+- **adminAuth middleware behavior smoke-checked.** With both env vars
+  unset, requests pass through and the one-time
+  `[adminAuth] … (dev mode)` warning is logged once even across
+  multiple invocations. With both env vars set, a request with no
+  `Authorization` header, with `Authorization: Basic <wrong-base64>`,
+  with `Authorization: Bearer …`, or with a malformed `Authorization: Basic`
+  string each returns `401` plus
+  `WWW-Authenticate: Basic realm="UnuTrip Admin"` and a plain-text
+  `Unauthorized` body. With matching credentials, the request reaches
+  the downstream router and returns the original handler response.
+- **No HTML byte change.** The `renderLayout` output is byte-identical
+  for the same `(content, activePath, title)` triple. Every section
+  template literal was copied verbatim from the original, so the
+  full-page byte stream (modulo non-deterministic values like
+  `new Date().toLocaleDateString(...)` and live counters) matches the
+  pre-Phase-4 output.
+- **No JSON shape change.** All four JSON-returning admin endpoints
+  (`GET /users/api/:id`, `GET /destinations/api/:id`, `GET /ai-report`,
+  and the six `/rag-ai/*` proxies) call the same helpers / repositories
+  and respond with the same `{ success, … }` / `{ ok, status, url, data }`
+  envelopes as before. The optional repository pilots (C and D) use
+  `db.get`'s native `undefined` return for missing rows, preserving the
+  pre-Phase-4 `if (!row) return 404` triggers byte-for-byte.
+- **RAG admin contract unchanged.** `fetchRagJson` and `postRagJson`
+  preserve the no-retry policy, the 3000 ms / 5000 ms default timeouts
+  (and the `RAG_ADMIN_DEBUG_TIMEOUT_MS` override for
+  `POST /rag-ai/debug-query`), and the
+  `AbortError → "Timeout khi gọi FastAPI RAG"` mapping. Header names
+  (`X-RAG-Internal-Key`) are unchanged because both helpers still pull
+  from `src/config/ragClient.js`.
+- **Android API contract unchanged.** No file under `src/modules/`,
+  `src/services/`, `src/routes/`, `src/utils.js`, `src/auth.js`, or
+  `src/repositories/` was edited by work items A or B; work items C and
+  D only **add** four new functions across two repository files. The
+  33 endpoints under `/api/**` are not modified.
+- **No schema change.** `backend/nodejs/database.sql` is not opened.
+- **No new npm dependency.** `package.json` and `package-lock.json`
+  are untouched. `crypto` and `Buffer` (used by `adminAuth`) are
+  Node-stdlib.
+- **`backend/rag` untouched.** No FastAPI file modified.
+- **Android sources untouched.** No file under `app/` modified.
+- **File-level sanity.** `src/admin.js` is 6 lines.
+  `Get-ChildItem -Recurse src/admin` reports 11 files (6 section routes
+  + 4 `_shared/` helpers + 1 `index.js`). `Test-Path
+  src/middlewares/adminAuth.middleware.js` is `True`.
+
+### 16.6 What is NOT done in Phase 4 (deferred)
+
+- Extracting HTML templates from inline JS literals into separate
+  `.html` files (Phase 5).
+- Tightening the helmet CSP to remove `'unsafe-inline'` and
+  `scriptSrcAttr` (Phase 5, requires the template extraction first).
+- Refactoring the rest of the admin inline SQL: the user listing query
+  with optional `?q=` search, `POST /users/save` (INSERT/UPDATE with
+  `bcrypt`), the destination listing query, `POST /destinations/save`
+  (which fans out to `app_places`, `place_images`, and the
+  `place_id_map` linkage), and `GET /ai-report` (`category` aggregate +
+  rating average) all still issue inline `db.*` calls. These are
+  Phase-5 work.
+- Adding new test coverage for the admin section routers or the
+  `adminAuth` middleware (Phase 5 owns testing).
+- Anything under `backend/rag/**` or any Android source.
+
+These remain queued for Phase 5.
+
+---
+
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

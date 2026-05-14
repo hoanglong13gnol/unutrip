@@ -11,6 +11,7 @@ import { buildAdminRouter } from "./admin.js";
 import { requestIdMiddleware } from "./middlewares/requestId.middleware.js";
 import { notFoundMiddleware } from "./middlewares/notFound.middleware.js";
 import { errorHandlerMiddleware } from "./middlewares/errorHandler.middleware.js";
+import { adminAuthMiddleware } from "./middlewares/adminAuth.middleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,7 +62,7 @@ export function createApp() {
   app.use("/images", express.static(publicImagesDir));
 
   app.use("/api", buildRouter());
-  app.use("/admin", buildAdminRouter());
+  app.use("/admin", adminAuthMiddleware, buildAdminRouter());
 
   app.use(notFoundMiddleware);
   app.use(errorHandlerMiddleware);

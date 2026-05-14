@@ -80,3 +80,30 @@ export async function countFavoritesByUserId(userId) {
 export async function countReviewsByUserId(userId) {
   return db.get("SELECT COUNT(*) as count FROM reviews WHERE user_id = ?", [userId]);
 }
+
+/**
+ * Admin-scoped detail lookup used by `GET /admin/users/api/:id`.
+ *
+ * Phase 4 pilot — preserves the exact column projection, table, and
+ * `WHERE id = ?` shape of the previous inline `db.get` call so the JSON
+ * payload returned to the admin UI is byte-identical (including the case
+ * where the row is missing — `db.get` resolves to `undefined`, which the
+ * admin handler then translates to a 404).
+ */
+export async function getAdminUserDetailById(id) {
+  return db.get(
+    "SELECT id, full_name, email, phone, avatar, preferences_json, created_at FROM users WHERE id = ?",
+    [id]
+  );
+}
+
+/**
+ * Admin-scoped DELETE used by `POST /admin/users/delete/:id`.
+ *
+ * Phase 4 pilot — the inline DELETE relied on FK constraints to cascade
+ * to `favorites` / `reviews` / `itineraries`, which is documented in the
+ * admin UI's confirm prompt. SQL text is preserved verbatim.
+ */
+export async function deleteUserById(id) {
+  return db.run("DELETE FROM users WHERE id = ?", [id]);
+}

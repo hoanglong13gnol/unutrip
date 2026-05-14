@@ -105,3 +105,31 @@ export async function getDestinationById({ userId, id }) {
     [userId, id]
   );
 }
+
+/**
+ * Admin-scoped detail lookup used by `GET /admin/destinations/api/:id`.
+ *
+ * Phase 4 pilot — distinct from `getDestinationById` because the admin UI
+ * does NOT need (and the JSON contract does NOT include) the
+ * `is_favorite` join. SQL text and column projection are byte-identical
+ * to the previous inline `db.get` call. `db.get` resolves to `undefined`
+ * for missing rows, which the admin handler translates into a 404.
+ */
+export async function getAdminDestinationDetailById(id) {
+  return db.get(
+    "SELECT id, name, category, description, city, province, address, latitude, longitude, open_time, close_time FROM app_places WHERE id = ?",
+    [id]
+  );
+}
+
+/**
+ * Admin-scoped DELETE used by `POST /admin/destinations/delete/:id`.
+ *
+ * Phase 4 pilot — relies on FK constraints to fan out to dependent
+ * tables (`favorites`, `reviews`, `place_images`, `place_id_map`, etc.).
+ * SQL is preserved verbatim. The admin UI's confirm prompt warns the
+ * operator that the action is not reversible.
+ */
+export async function deleteDestinationById(id) {
+  return db.run("DELETE FROM app_places WHERE id = ?", [id]);
+}
