@@ -5,10 +5,28 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 
-RAG_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_HERE = Path(__file__).resolve()
+RAG_DIR = _HERE.parents[1]
 
-load_dotenv(PROJECT_ROOT / ".env")
+
+def _infer_project_root() -> Path:
+    """Docker image uses flat /svc/layout; repo clone has backend/rag/core/... under repo root."""
+    override = os.getenv("UNUTRIP_PROJECT_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    for dir_path in _HERE.parents:
+        if (dir_path / "docker-compose.yml").is_file():
+            return dir_path
+    # Container: no compose file baked in; Compose injects env from host .env
+    return RAG_DIR
+
+
+PROJECT_ROOT = _infer_project_root()
+_dotenv_file = PROJECT_ROOT / ".env"
+if _dotenv_file.is_file():
+    load_dotenv(_dotenv_file)
+else:
+    load_dotenv()
 
 
 def env_bool(name: str, default: bool = False) -> bool:
