@@ -120,6 +120,7 @@ def main() -> None:
         "bm25_sha256": bm25_sha,
     }
 
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
     report_path = settings.reports_dir / "build_bm25_index_report.json"
     report_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2),
