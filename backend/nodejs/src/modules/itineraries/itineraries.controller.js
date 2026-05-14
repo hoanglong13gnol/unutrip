@@ -123,7 +123,6 @@ export async function deleteItinerary(req, res) {
 
 export async function saveAiItinerary(req, res) {
   try {
-    console.log("[AI] Save AI Itinerary Request:", JSON.stringify(req.body).substring(0, 500));
     const { title, description, startDate, endDate, budget, days } = req.body;
 
     await itinerariesService.saveAiItinerary({

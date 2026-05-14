@@ -1008,4 +1008,212 @@ These remain queued for Phases 3–5 per §9.
 
 ---
 
+## 15. Phase 3 Result
+
+> Implemented on the `v2/database-refactor` branch on top of the Phase 2
+> commit `2057944`, against the plan in `README_FIX_ALL_PHASE3.md`. This
+> section is the running log of what actually shipped in Phase 3 and
+> supersedes the high-level plan in §9 for that phase.
+
+### 15.1 What was done
+
+Phase 3 was an **AI / itinerary transactional hardening** pass. Every change
+preserves the Android API contract and the RAG contract byte-for-byte
+(paths, status codes, response shapes, Vietnamese strings, default times,
+default note strings). No schema, no repository, no route, no middleware,
+no shared/http, no `withTransaction.js`, no test, and no `package.json`
+was edited.
+
+All four required work items (A, B, C, D) and both optional work items
+(E, F) were implemented:
+
+- **Work item A — `suggestItinerary` transaction relocated.** The ~60-line
+  raw-SQL transaction inside `src/modules/ai/ai.controller.js#suggestItinerary`
+  was replaced with a single call to a new service function
+  `itinerariesService.persistAiSuggestedItinerary({ userId, aiResult,
+  isoStart, isoEnd, totalDays, budget })`. The new function lives in
+  `src/services/itineraries.service.js` (chosen over `ai.service.js` so it
+  sits next to the other itinerary persistence flows and shares the
+  `itinerariesRepository.insert*` overloads). It uses
+  `withTransaction(async (conn) => …)` and the existing `(payload, conn)`
+  repository overloads — `insertItinerary`, `insertItineraryDay`,
+  `insertItineraryItem`. SQL strings, default values
+  (`"Lịch trình AI tạo"`, `"Tạo bởi Hướng dẫn viên du lịch ảo."`, `'planned'`,
+  `"08:00"` / `"09:00"`, `""`, `orderIdx` starting at `0`), and the
+  `newItin` response object are byte-identical to the old controller
+  block. The outer try/catch in the controller (and the
+  `"Lỗi tạo lịch trình tự động: …"` 500 path, plus the
+  `invalid_ai_json` → `"AI trả về dữ liệu không hợp lệ."` branch) are
+  preserved. The now-unused `import { db }` line was removed from
+  `ai.controller.js`.
+- **Work item B — `createItineraryFromAiOption` made transactional.**
+  All `db.run("INSERT INTO …")` calls in
+  `src/services/itineraries.service.js#createItineraryFromAiOption` were
+  replaced with `itinerariesRepository.insert*({…}, conn)` calls inside a
+  single `withTransaction` boundary. Pre-flight validation
+  (`flattenSelectedOptionDays`, `resolveDestinationIdsFromSelection`,
+  `placeIdMapRepository.getDestinationIdByRagPlaceId` lookups, the
+  `no_mapped_destinations` and `invalid_dates` early returns,
+  `totalDays`, `finalBudget`, `destinationIdByRawPlaceId` map building,
+  `timeSlots`) stays outside the transaction as required by §3.2.6 of the
+  plan. The map-building loop was relocated above the `withTransaction(...)`
+  call so all INSERTs are contiguous inside the boundary. `description ?? null`,
+  `index + 1` for `orderIndex`, `item?.reason || "Được chọn từ AI tour"`,
+  `timeSlots[index % timeSlots.length]`, and the
+  `{ ok:true, data:{ id, itineraryId, optionId, selectedCount, unresolved } }`
+  return shape are preserved bit-for-bit.
+- **Work item C — `createItineraryFromAiSelection` made transactional.**
+  Same pattern applied to `createItineraryFromAiSelection`. All raw
+  `db.run` INSERTs replaced with repository overloads inside a single
+  `withTransaction` boundary. `dayIds` array preserved in original order.
+  The note string `"Được chọn từ AI gợi ý"` is intentionally different
+  from the option flow's `"Được chọn từ AI tour"` and was kept exactly
+  as before. The `dayIndex = i % totalDays` /
+  `orderIndex = Math.floor(i / totalDays)` distribution math, the
+  `slot = timeSlots[orderIndex % timeSlots.length]` rotation, and the
+  `orderIndex + 1` value passed to the repository are all unchanged. The
+  `{ ok:true, data:{ id, itineraryId, selectedCount, destinationIds, unresolved } }`
+  return shape is preserved bit-for-bit.
+- **Work item D — PII `console.log` dropped.** The
+  `console.log("[AI] Save AI Itinerary Request:", JSON.stringify(req.body).substring(0, 500))`
+  line at the top of
+  `src/modules/itineraries/itineraries.controller.js#saveAiItinerary` was
+  removed. The success ack (`"Đã lưu lịch trình thành công!"`), the 500
+  failure shape (`"Lỗi lưu DB: " + detail`), and the operator-facing
+  `console.error("Save AI Itinerary Error:", error)` log on failure were
+  all kept exactly as before.
+- **Work item E (optional) — `saveAiItinerary` service refactored.**
+  The manual `db.pool.getConnection()` + `beginTransaction` / `commit` /
+  `rollback` / `release` dance in
+  `src/services/itineraries.service.js#saveAiItinerary` was replaced with
+  a single `await withTransaction(async (conn) => { … })`. SQL,
+  defaults (`"Lịch trình AI"`, `"Đã lưu từ gợi ý AI."`, `budget || null`,
+  `"08:00"` / `"09:00"` / `""`, `orderIdx` starting at `0`), and the
+  `safeStartDate` / `safeEndDate` / `totalDays` / `isoStart` / `isoEnd`
+  derivation outside the transaction are unchanged. `db.pool.getConnection()`
+  no longer appears anywhere outside `withTransaction.js`.
+- **Work item F (optional) — shared `timeSlots` constant.** Created
+  `backend/nodejs/src/shared/utils/timeSlots.js` exporting
+  `DEFAULT_AI_ITINERARY_TIME_SLOTS` (the canonical
+  `[["08:00","10:00"],["10:30","12:00"],["14:00","16:00"],["16:30","18:00"]]`
+  array). Both `createItineraryFromAiOption` and
+  `createItineraryFromAiSelection` now reference the imported constant
+  via a `const timeSlots = DEFAULT_AI_ITINERARY_TIME_SLOTS` alias so the
+  rotation expression `timeSlots[… % timeSlots.length]` continues to read
+  identically. Values, order, count, and string formatting are
+  byte-identical to the original local arrays. This is the only new file
+  Phase 3 created.
+
+The unused `import { db } from "../db.js"` at the top of
+`src/services/itineraries.service.js` was removed (work items B, C, E
+together eliminated the last reference to `db` in that module). The two
+JSDoc comments that previously claimed the option/selection flows were
+"non-transactional db.run" were updated to "wrapped in `withTransaction`
+in Phase 3" so the documentation matches the implementation.
+
+### 15.2 Files modified (3)
+
+```
+backend/nodejs/src/
+├── modules/
+│   ├── ai/
+│   │   └── ai.controller.js                     ← work item A: trim suggestItinerary, drop `import { db }`
+│   └── itineraries/
+│       └── itineraries.controller.js            ← work item D: drop PII console.log line
+└── services/
+    └── itineraries.service.js                   ← work items B, C, E (+ A: persistAiSuggestedItinerary added at bottom)
+                                                 ← work item F: import DEFAULT_AI_ITINERARY_TIME_SLOTS, alias both local timeSlots
+                                                 ← drop now-unused `import { db }` and refresh two JSDoc lines
+```
+
+### 15.3 Files created (1)
+
+```
+backend/nodejs/src/shared/utils/timeSlots.js     ← work item F: DEFAULT_AI_ITINERARY_TIME_SLOTS constant
+```
+
+### 15.4 Files explicitly NOT modified
+
+`backend/nodejs/src/modules/{auth,users,favorites,destinations,reviews,health}/**`,
+`backend/nodejs/src/modules/ai/ai.routes.js`,
+`backend/nodejs/src/modules/itineraries/itineraries.routes.js`,
+`backend/nodejs/src/routes/**` (legacy shims and `routes/index.js`),
+`backend/nodejs/src/repositories/**` (every `*.repository.js` is
+unchanged — the `(payload, conn)` overloads were already in place from
+Phase 1/2 and were used as-is),
+`backend/nodejs/src/services/{ai,favorites,destinations,reviews}.service.js`
+(no edits to any function in `ai.service.js`),
+`backend/nodejs/src/admin.js`, `backend/nodejs/src/db.js`,
+`backend/nodejs/src/auth.js`, `backend/nodejs/src/utils.js`,
+`backend/nodejs/src/config/**`, `backend/nodejs/src/lib/**`,
+`backend/nodejs/src/schemas/**`,
+`backend/nodejs/src/shared/http/**`,
+`backend/nodejs/src/shared/db/withTransaction.js` (imported, not edited),
+`backend/nodejs/src/middlewares/**`, `backend/nodejs/src/app.js`,
+`backend/nodejs/src/index.js`, `backend/nodejs/tests/**`,
+`backend/nodejs/package.json`, `backend/nodejs/package-lock.json`,
+`backend/nodejs/eslint.config.js`, `backend/nodejs/vitest.config.js`,
+`backend/nodejs/.prettierrc.json`, `backend/nodejs/database.sql`,
+`backend/nodejs/server.py`, `backend/nodejs/test_ai.js`,
+`backend/nodejs/seed.js`, `.env`, `.env.example`,
+`backend/rag/**`, and every Android source.
+
+### 15.5 Verification
+
+- **`npm test` is green.** `Test Files 4 passed (4)` / `Tests 7 passed (7)` —
+  identical to the Phase 1/2 baseline. The `tests/ai-rag-chat.route.test.js`
+  suite still exercises the full app boot through the module-routed
+  handler and returns the documented envelope.
+- **`npm run lint` is clean.** Zero ESLint findings across `src/` and
+  `tests/`.
+- **Endpoint shapes unchanged.** All four Phase-3-touched endpoints
+  (`POST /api/ai/suggest-itinerary`, `POST /api/itineraries/save-ai`,
+  `POST /api/itineraries/create-from-option`,
+  `POST /api/itineraries/create-from-selection`) return the same
+  HTTP statuses and the same JSON bodies as before — including the
+  `no_mapped_destinations` and `invalid_dates` 400 paths and the
+  `"AI trả về dữ liệu không hợp lệ."` / `"Lỗi tạo lịch trình tự động: …"`
+  / `"Lỗi lưu DB: …"` failure envelopes.
+- **Vietnamese strings byte-identical.** `"Lịch trình AI tạo"`,
+  `"Tạo bởi Hướng dẫn viên du lịch ảo."`, `"Lịch trình AI"`,
+  `"Đã lưu từ gợi ý AI."`, `"Được chọn từ AI tour"`,
+  `"Được chọn từ AI gợi ý"`, `"Đã tạo lịch trình bằng AI thành công!"`,
+  `"Đã lưu lịch trình thành công!"`,
+  `"Tạo lịch trình từ tour AI thành công"`, and
+  `"Tạo lịch trình từ AI gợi ý thành công"` are all preserved.
+- **Repository public APIs unchanged.** No edit to any
+  `*.repository.js`; only the existing `(payload, conn)` overloads on
+  `insertItinerary` / `insertItineraryDay` / `insertItineraryItem` were
+  consumed.
+- **`db.pool.getConnection()` is now confined to
+  `src/shared/db/withTransaction.js`.** The previously-direct call in
+  `saveAiItinerary` is gone (work item E), as is the inline
+  `conn = await db.pool.getConnection()` that Phase 2 had relocated into
+  `ai.controller.js#suggestItinerary` (work item A).
+- **`withTransaction` is used in exactly four service-layer call sites**
+  (`createItineraryFromAiOption`, `createItineraryFromAiSelection`,
+  `saveAiItinerary`, `persistAiSuggestedItinerary`) and zero controller
+  call sites. The helper itself was not modified.
+- **No new dependency.** `package.json` and `package-lock.json` are
+  untouched.
+- **PII `console.log` is gone** from `saveAiItinerary` (work item D).
+  The operator-facing `console.error("Save AI Itinerary Error:", error)`
+  on the failure path is intentionally retained.
+- **DB schema unchanged.** `database.sql` not opened.
+- **Android untouched.** No file under `app/` modified.
+- **`backend/rag` untouched.** No FastAPI file modified.
+
+### 15.6 What is NOT done in Phase 3 (deferred)
+
+- Splitting `routes/helpers.js` into per-module DTO files (still
+  shared between `services/itineraries.service.js` and the destinations
+  module).
+- Splitting `admin.js`.
+- Adding new test coverage per module.
+- Anything under `backend/rag/**` or any Android source.
+
+These remain queued for Phases 4–5 per §9.
+
+---
+
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

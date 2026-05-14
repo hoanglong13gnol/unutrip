@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { getResolvedAiModelUrl } from "../../config/env.js";
-import { db } from "../../db.js";
 import { daysBetweenInclusive, toIsoDate, resolveRequestTrace } from "../../utils.js";
 import {
   generateSuggestItineraryAiResult,
@@ -12,7 +11,8 @@ import {
 } from "../../services/ai.service.js";
 import {
   createItineraryFromAiOption,
-  createItineraryFromAiSelection
+  createItineraryFromAiSelection,
+  persistAiSuggestedItinerary
 } from "../../services/itineraries.service.js";
 
 export async function suggestItinerary(req, res) {
@@ -53,84 +53,16 @@ export async function suggestItinerary(req, res) {
     const isoStart = toIsoDate(startDate);
     const isoEnd = toIsoDate(endDate);
 
-    const conn = await db.pool.getConnection();
-    try {
-      await conn.beginTransaction();
+    const newItin = await persistAiSuggestedItinerary({
+      userId: req.user.userId,
+      aiResult,
+      isoStart,
+      isoEnd,
+      totalDays,
+      budget
+    });
 
-      const [itinRes] = await conn.execute(
-        `
-        INSERT INTO itineraries (user_id, title, description, start_date, end_date, total_days, status, estimated_budget)
-        VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)
-      `,
-        [
-          req.user.userId,
-          aiResult.title || "Lịch trình AI tạo",
-          aiResult.description || "Tạo bởi Hướng dẫn viên du lịch ảo.",
-          isoStart,
-          isoEnd,
-          totalDays,
-          budget || null
-        ]
-      );
-      const itineraryId = itinRes.insertId;
-
-      if (aiResult.days && Array.isArray(aiResult.days)) {
-        for (const day of aiResult.days) {
-          const dayDate = new Date(isoStart);
-          dayDate.setDate(dayDate.getDate() + ((day.dayNumber || 1) - 1));
-          const dayDateStr = toIsoDate(dayDate.toISOString().split("T")[0]);
-
-          const [dayRes] = await conn.execute(
-            `
-            INSERT INTO itinerary_days (itinerary_id, day_number, date)
-            VALUES (?, ?, ?)
-          `,
-            [itineraryId, day.dayNumber || 1, dayDateStr]
-          );
-          const dayId = dayRes.insertId;
-
-          let orderIdx = 0;
-          if (day.items && Array.isArray(day.items)) {
-            for (const item of day.items) {
-              await conn.execute(
-                `
-                INSERT INTO itinerary_items (day_id, destination_id, order_index, start_time, end_time, note)
-                VALUES (?, ?, ?, ?, ?, ?)
-              `,
-                [
-                  dayId,
-                  item.destinationId,
-                  orderIdx++,
-                  item.startTime || "08:00",
-                  item.endTime || "09:00",
-                  item.note || ""
-                ]
-              );
-            }
-          }
-        }
-      }
-
-      await conn.commit();
-
-      const newItin = {
-        id: itineraryId,
-        userId: req.user.userId,
-        title: aiResult.title,
-        description: aiResult.description,
-        startDate: isoStart,
-        endDate: isoEnd,
-        totalDays,
-        status: "planned",
-        estimatedBudget: budget || null
-      };
-      return res.json({ success: true, itinerary: newItin, message: "Đã tạo lịch trình bằng AI thành công!" });
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+    return res.json({ success: true, itinerary: newItin, message: "Đã tạo lịch trình bằng AI thành công!" });
   } catch (error) {
     console.error("AI Itinerary Suggestion Error:", error);
     return res.status(500).json({ success: false, message: "Lỗi tạo lịch trình tự động: " + error.message });

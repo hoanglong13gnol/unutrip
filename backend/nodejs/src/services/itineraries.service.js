@@ -1,7 +1,8 @@
-import { db } from "../db.js";
 import { daysBetweenInclusive, toIsoDate } from "../utils.js";
 import * as itinerariesRepository from "../repositories/itineraries.repository.js";
 import * as placeIdMapRepository from "../repositories/placeIdMap.repository.js";
+import { withTransaction } from "../shared/db/withTransaction.js";
+import { DEFAULT_AI_ITINERARY_TIME_SLOTS } from "../shared/utils/timeSlots.js";
 import {
   attachDestinationImages,
   flattenSelectedOptionDays,
@@ -187,10 +188,7 @@ export async function saveAiItinerary({ userId, payload }) {
   const isoStart = toIsoDate(safeStartDate);
   const isoEnd = toIsoDate(safeEndDate);
 
-  const conn = await db.pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
+  await withTransaction(async (conn) => {
     const itinRes = await itinerariesRepository.insertItinerary(
       {
         userId,
@@ -239,18 +237,11 @@ export async function saveAiItinerary({ userId, payload }) {
         }
       }
     }
-
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  });
 }
 
 /**
- * POST /itineraries/create-from-option persistence (non-transactional db.run), after route field validation.
+ * POST /itineraries/create-from-option persistence (wrapped in `withTransaction` in Phase 3), after route field validation.
  *
  * @param {{ userId: number, payload: Record<string, unknown> }} params
  * @returns {Promise<
@@ -306,35 +297,6 @@ export async function createItineraryFromAiOption({ userId, payload }) {
 
   const finalBudget = estimatedBudget ?? budget ?? null;
 
-  const itineraryInfo = await db.run(
-    `
-      INSERT INTO itineraries
-      (user_id, title, description, start_date, end_date, total_days, status, estimated_budget)
-      VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)
-      `,
-    [userId, title, description ?? null, startDate, endDate, totalDays, finalBudget]
-  );
-
-  const itineraryId = Number(itineraryInfo.lastInsertRowid);
-  const dayIdByNumber = new Map();
-
-  for (let dayNumber = 1; dayNumber <= totalDays; dayNumber++) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + dayNumber - 1);
-
-    const dateText = date.toISOString().slice(0, 10);
-
-    const dayInfo = await db.run(
-      `
-        INSERT INTO itinerary_days (itinerary_id, day_number, date)
-        VALUES (?, ?, ?)
-        `,
-      [itineraryId, dayNumber, dateText]
-    );
-
-    dayIdByNumber.set(dayNumber, Number(dayInfo.lastInsertRowid));
-  }
-
   const destinationIdByRawPlaceId = new Map();
 
   for (const item of selectedDestinations) {
@@ -363,66 +325,95 @@ export async function createItineraryFromAiOption({ userId, payload }) {
     }
   }
 
-  const timeSlots = [
-    ["08:00", "10:00"],
-    ["10:30", "12:00"],
-    ["14:00", "16:00"],
-    ["16:30", "18:00"]
-  ];
+  const timeSlots = DEFAULT_AI_ITINERARY_TIME_SLOTS;
 
-  let insertedCount = 0;
+  const { itineraryId, insertedCount } = await withTransaction(async (conn) => {
+    const itineraryInfo = await itinerariesRepository.insertItinerary(
+      {
+        userId,
+        title,
+        description: description ?? null,
+        startDate,
+        endDate,
+        totalDays,
+        estimatedBudget: finalBudget
+      },
+      conn
+    );
 
-  for (const day of days) {
-    const dayNumber = Number(day?.dayNumber || 1);
-    const dayId = dayIdByNumber.get(dayNumber);
+    const newItineraryId = Number(itineraryInfo.lastInsertRowid);
+    const dayIdByNumber = new Map();
 
-    if (!dayId) continue;
+    for (let dayNumber = 1; dayNumber <= totalDays; dayNumber++) {
+      const date = new Date(start);
+      date.setDate(start.getDate() + dayNumber - 1);
 
-    const items = Array.isArray(day?.items) ? day.items : [];
+      const dateText = date.toISOString().slice(0, 10);
 
-    for (let index = 0; index < items.length; index++) {
-      const item = items[index];
-      const rawPlaceId =
-        item?.rawPlaceId ?? item?.raw_place_id ?? item?.placeId ?? item?.place_id;
-
-      const directId = item?.destinationId ?? item?.destination_id;
-
-      let destinationId = null;
-
-      if (
-        directId !== null &&
-        directId !== undefined &&
-        Number.isInteger(Number(directId)) &&
-        Number(directId) > 0
-      ) {
-        destinationId = Number(directId);
-      } else if (rawPlaceId) {
-        destinationId = destinationIdByRawPlaceId.get(String(rawPlaceId));
-      }
-
-      if (!destinationId) continue;
-
-      const slot = timeSlots[index % timeSlots.length];
-
-      await db.run(
-        `
-          INSERT INTO itinerary_items
-          (day_id, destination_id, start_time, end_time, note, order_index)
-          VALUES (?, ?, ?, ?, ?, ?)
-          `,
-        [
-          dayId,
-          destinationId,
-          item?.startTime || slot[0],
-          item?.endTime || slot[1],
-          item?.reason || "Được chọn từ AI tour",
-          index + 1
-        ]
+      const dayInfo = await itinerariesRepository.insertItineraryDay(
+        {
+          itineraryId: newItineraryId,
+          dayNumber,
+          date: dateText
+        },
+        conn
       );
 
-      insertedCount++;
+      dayIdByNumber.set(dayNumber, Number(dayInfo.lastInsertRowid));
     }
-  }
+
+    let inserted = 0;
+
+    for (const day of days) {
+      const dayNumber = Number(day?.dayNumber || 1);
+      const dayId = dayIdByNumber.get(dayNumber);
+
+      if (!dayId) continue;
+
+      const items = Array.isArray(day?.items) ? day.items : [];
+
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+        const rawPlaceId =
+          item?.rawPlaceId ?? item?.raw_place_id ?? item?.placeId ?? item?.place_id;
+
+        const directId = item?.destinationId ?? item?.destination_id;
+
+        let destinationId = null;
+
+        if (
+          directId !== null &&
+          directId !== undefined &&
+          Number.isInteger(Number(directId)) &&
+          Number(directId) > 0
+        ) {
+          destinationId = Number(directId);
+        } else if (rawPlaceId) {
+          destinationId = destinationIdByRawPlaceId.get(String(rawPlaceId));
+        }
+
+        if (!destinationId) continue;
+
+        const slot = timeSlots[index % timeSlots.length];
+
+        await itinerariesRepository.insertItineraryItem(
+          {
+            dayId,
+            destinationId,
+            startTime: item?.startTime || slot[0],
+            endTime: item?.endTime || slot[1],
+            note: item?.reason || "Được chọn từ AI tour",
+            orderIndex: index + 1
+          },
+          conn
+        );
+
+        inserted++;
+      }
+    }
+
+    return { itineraryId: newItineraryId, insertedCount: inserted };
+  });
 
   return {
     ok: true,
@@ -437,7 +428,7 @@ export async function createItineraryFromAiOption({ userId, payload }) {
 }
 
 /**
- * POST /itineraries/create-from-selection persistence (non-transactional db.run), after route field validation.
+ * POST /itineraries/create-from-selection persistence (wrapped in `withTransaction` in Phase 3), after route field validation.
  *
  * @param {{ userId: number, payload: Record<string, unknown> }} params
  * @returns {Promise<
@@ -507,63 +498,63 @@ export async function createItineraryFromAiSelection({ userId, payload }) {
 
   const finalBudget = estimatedBudget ?? budget ?? null;
 
-  const itineraryInfo = await db.run(
-    `
-      INSERT INTO itineraries
-      (user_id, title, description, start_date, end_date, total_days, status, estimated_budget)
-      VALUES (?, ?, ?, ?, ?, ?, 'planned', ?)
-      `,
-    [userId, title, description ?? null, startDate, endDate, totalDays, finalBudget]
-  );
+  const timeSlots = DEFAULT_AI_ITINERARY_TIME_SLOTS;
 
-  const itineraryId = itineraryInfo.lastInsertRowid;
-  const dayIds = [];
-
-  for (let dayNumber = 1; dayNumber <= totalDays; dayNumber++) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + dayNumber - 1);
-
-    const dateText = date.toISOString().slice(0, 10);
-
-    const dayInfo = await db.run(
-      `
-        INSERT INTO itinerary_days (itinerary_id, day_number, date)
-        VALUES (?, ?, ?)
-        `,
-      [itineraryId, dayNumber, dateText]
+  const itineraryId = await withTransaction(async (conn) => {
+    const itineraryInfo = await itinerariesRepository.insertItinerary(
+      {
+        userId,
+        title,
+        description: description ?? null,
+        startDate,
+        endDate,
+        totalDays,
+        estimatedBudget: finalBudget
+      },
+      conn
     );
 
-    dayIds.push(dayInfo.lastInsertRowid);
-  }
+    const newItineraryId = itineraryInfo.lastInsertRowid;
+    const dayIds = [];
 
-  const timeSlots = [
-    ["08:00", "10:00"],
-    ["10:30", "12:00"],
-    ["14:00", "16:00"],
-    ["16:30", "18:00"]
-  ];
+    for (let dayNumber = 1; dayNumber <= totalDays; dayNumber++) {
+      const date = new Date(start);
+      date.setDate(start.getDate() + dayNumber - 1);
 
-  for (let i = 0; i < destinationIds.length; i++) {
-    const dayIndex = i % totalDays;
-    const orderIndex = Math.floor(i / totalDays);
-    const slot = timeSlots[orderIndex % timeSlots.length];
+      const dateText = date.toISOString().slice(0, 10);
 
-    await db.run(
-      `
-        INSERT INTO itinerary_items
-        (day_id, destination_id, start_time, end_time, note, order_index)
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-      [
-        dayIds[dayIndex],
-        destinationIds[i],
-        slot[0],
-        slot[1],
-        "Được chọn từ AI gợi ý",
-        orderIndex + 1
-      ]
-    );
-  }
+      const dayInfo = await itinerariesRepository.insertItineraryDay(
+        {
+          itineraryId: newItineraryId,
+          dayNumber,
+          date: dateText
+        },
+        conn
+      );
+
+      dayIds.push(dayInfo.lastInsertRowid);
+    }
+
+    for (let i = 0; i < destinationIds.length; i++) {
+      const dayIndex = i % totalDays;
+      const orderIndex = Math.floor(i / totalDays);
+      const slot = timeSlots[orderIndex % timeSlots.length];
+
+      await itinerariesRepository.insertItineraryItem(
+        {
+          dayId: dayIds[dayIndex],
+          destinationId: destinationIds[i],
+          startTime: slot[0],
+          endTime: slot[1],
+          note: "Được chọn từ AI gợi ý",
+          orderIndex: orderIndex + 1
+        },
+        conn
+      );
+    }
+
+    return newItineraryId;
+  });
 
   return {
     ok: true,
@@ -574,5 +565,109 @@ export async function createItineraryFromAiSelection({ userId, payload }) {
       destinationIds,
       unresolved
     }
+  };
+}
+
+/**
+ * POST /ai/suggest-itinerary persistence (Phase 3 work item A).
+ *
+ * Owns the transactional INSERTs that the controller previously did inline:
+ * one row in `itineraries`, N rows in `itinerary_days`, and M rows in
+ * `itinerary_items`. Wrapped in a single `withTransaction` boundary so a
+ * mid-flight failure cannot leave partial rows behind. Date parsing,
+ * AI-result generation, and `invalid_ai_json` handling stay in the
+ * controller — only persistence lives here.
+ *
+ * @param {{
+ *   userId: number,
+ *   aiResult: { title?: string, description?: string, days?: Array<{ dayNumber?: number, items?: Array<{ destinationId: number, startTime?: string, endTime?: string, note?: string }> }> },
+ *   isoStart: string,
+ *   isoEnd: string,
+ *   totalDays: number,
+ *   budget?: number | null
+ * }} params
+ * @returns {Promise<{
+ *   id: number,
+ *   userId: number,
+ *   title: string | undefined,
+ *   description: string | undefined,
+ *   startDate: string,
+ *   endDate: string,
+ *   totalDays: number,
+ *   status: "planned",
+ *   estimatedBudget: number | null
+ * }>} The `newItin` object the controller returns to the Android client.
+ */
+export async function persistAiSuggestedItinerary({
+  userId,
+  aiResult,
+  isoStart,
+  isoEnd,
+  totalDays,
+  budget
+}) {
+  const itineraryId = await withTransaction(async (conn) => {
+    const itinRes = await itinerariesRepository.insertItinerary(
+      {
+        userId,
+        title: aiResult.title || "Lịch trình AI tạo",
+        description: aiResult.description || "Tạo bởi Hướng dẫn viên du lịch ảo.",
+        startDate: isoStart,
+        endDate: isoEnd,
+        totalDays,
+        estimatedBudget: budget || null
+      },
+      conn
+    );
+    const newItineraryId = itinRes.lastInsertRowid;
+
+    if (aiResult.days && Array.isArray(aiResult.days)) {
+      for (const day of aiResult.days) {
+        const dayDate = new Date(isoStart);
+        dayDate.setDate(dayDate.getDate() + ((day.dayNumber || 1) - 1));
+        const dayDateStr = toIsoDate(dayDate.toISOString().split("T")[0]);
+
+        const dayRes = await itinerariesRepository.insertItineraryDay(
+          {
+            itineraryId: newItineraryId,
+            dayNumber: day.dayNumber || 1,
+            date: dayDateStr
+          },
+          conn
+        );
+        const dayId = dayRes.lastInsertRowid;
+
+        let orderIdx = 0;
+        if (day.items && Array.isArray(day.items)) {
+          for (const item of day.items) {
+            await itinerariesRepository.insertItineraryItem(
+              {
+                dayId,
+                destinationId: item.destinationId,
+                orderIndex: orderIdx++,
+                startTime: item.startTime || "08:00",
+                endTime: item.endTime || "09:00",
+                note: item.note || ""
+              },
+              conn
+            );
+          }
+        }
+      }
+    }
+
+    return newItineraryId;
+  });
+
+  return {
+    id: itineraryId,
+    userId,
+    title: aiResult.title,
+    description: aiResult.description,
+    startDate: isoStart,
+    endDate: isoEnd,
+    totalDays,
+    status: "planned",
+    estimatedBudget: budget || null
   };
 }
