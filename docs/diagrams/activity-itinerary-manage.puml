@@ -1,0 +1,68 @@
+@startuml ActivityItineraryManage
+' Biểu đồ hoạt động — Quản lý lịch trình
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Quản lý lịch trình**
+
+start
+
+:Mở tab **Lịch trình**;
+
+:Tải danh sách lịch từ máy chủ;
+
+if (**Có lịch đã lưu?**) then (Không)
+  :Hiển thị trạng thái trống hoặc\nhướng dẫn tạo lịch;
+  stop
+else (Có)
+endif
+
+:Hiển thị danh sách và **chi tiết** chuyến;
+
+:Xem / **thêm điểm** / sửa tiêu đề hoặc **xóa**\n(theo thao tác người dùng);
+
+:Gửi **PUT / POST / DELETE** tương ứng và đồng bộ CSDL;
+
+:Cập nhật giao diện sau khi máy chủ phản hồi;
+
+stop
+
+@enduml

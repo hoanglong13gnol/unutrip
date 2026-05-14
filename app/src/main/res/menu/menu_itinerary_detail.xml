@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/itinerary_action_edit_meta"
+        android:icon="@drawable/ic_edit"
+        android:title="@string/itinerary_edit_trip_info"
+        app:iconTint="@color/white"
+        app:showAsAction="always" />
+</menu>

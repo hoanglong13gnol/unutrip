@@ -1,0 +1,48 @@
+@startuml UserLogin_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình đăng nhập**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**AuthController**" as AC <<Application>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Mở màn hình đăng nhập
+User -> UI : Nhập email và mật khẩu
+User -> UI : Nhấn **Đăng nhập**
+
+activate UI
+
+UI -> AC : **POST** `/auth/login` (email, password)
+activate AC
+
+AC -> AC : Kiểm tra payload (**Zod**)
+
+AC -> DB : **`SELECT`** user kèm **password_hash** WHERE email = ?
+activate DB
+DB --> AC : bản ghi **hoặc** null
+deactivate DB
+
+alt Sai email / mật khẩu
+  AC --> UI : **401** Sai email hoặc mật khẩu
+  UI --> User : Thông báo lỗi
+else Xác thực thành công
+  AC -> AC : **bcrypt.compare** (mật khẩu)
+  AC -> AC : **signToken** JWT
+  AC --> UI : **200** token + **user** DTO
+  UI -> UI : Lưu token cục bộ (session app)
+  UI --> User : Vào màn hình chính
+end
+
+deactivate AC
+deactivate UI
+
+legend right
+  **Endpoint đầy đủ:** **`POST /api/auth/login`**. Các API khác dùng header **Authorization: Bearer** kèm JWT.
+endlegend
+
+@enduml

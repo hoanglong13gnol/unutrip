@@ -52,7 +52,20 @@
     <string name="my_itineraries">Lịch trình của tôi</string>
     <string name="create_itinerary">Tạo lịch trình</string>
     <string name="ai_suggest">✨ Gợi ý bằng AI</string>
-    <string name="itinerary_empty">Bạn chưa có lịch trình nào\nHãy tạo chuyến đi đầu tiên!</string>
+    <!-- Itinerary detail / picker -->
+    <string name="itinerary_add_stop_subtitle_fixed">Đang thêm vào %1$s</string>
+    <string name="itinerary_add_stop_subtitle_pick_day">Chọn ngày trên thanh chip, rồi tìm địa điểm</string>
+    <string name="itinerary_add_stop_empty_browse">Chưa có dữ liệu. Thử nhập tên địa điểm để tìm.</string>
+    <string name="itinerary_add_stop_empty_search">Không tìm thấy địa điểm phù hợp</string>
+    <string name="itinerary_add_stop_fab">Thêm địa điểm vào lịch trình</string>
+    <string name="itinerary_edit_trip_info">Sửa thông tin chuyến</string>
+    <string name="itinerary_add_day">Thêm ngày</string>
+    <string name="itinerary_add_stop_short">Thêm điểm</string>
+    <string name="itinerary_delete_day">Xóa ngày</string>
+    <string name="itinerary_delete_day_confirm_title">Xóa ngày này?</string>
+    <string name="itinerary_delete_day_confirm_message">Mọi hoạt động trong ngày sẽ bị xóa. Các ngày còn lại được đánh số lại theo ngày bắt đầu chuyến.</string>
+    <string name="cd_edit_activity">Sửa hoạt động</string>
+    <string name="cd_delete_activity">Xóa hoạt động</string>
 
     <!-- Chatbot -->
     <string name="chat_title">Trợ lý Du lịch AI</string>

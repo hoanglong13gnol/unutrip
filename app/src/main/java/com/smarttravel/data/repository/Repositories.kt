@@ -324,6 +324,24 @@ class ItineraryRepository(private val api: ApiService) {
         }
     }
 
+    suspend fun updateItinerary(
+        token: String,
+        id: Int,
+        body: UpdateItineraryRequest
+    ): Resource<Itinerary> {
+        return try {
+            val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
+            val response = api.updateItinerary(authHeader, id, body)
+            if (response.isSuccessful && response.body()?.data != null) {
+                Resource.Success(response.body()!!.data!!)
+            } else {
+                Resource.Error("Không thể cập nhật lịch trình")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Lỗi kết nối: ${e.message}")
+        }
+    }
+
     suspend fun previewAIItinerary(
         token: String,
         request: AIItineraryPreviewRequest
@@ -402,17 +420,88 @@ class ItineraryRepository(private val api: ApiService) {
     suspend fun addDestination(
         token: String,
         itineraryId: Int,
-        destinationId: Int
+        destinationId: Int,
+        dayId: Int? = null,
+        startTime: String? = null,
+        endTime: String? = null,
+        note: String? = null
     ): Resource<Unit> {
         return try {
             val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
-            val request = AddItineraryItemRequest(destinationId = destinationId)
+            val request = AddItineraryItemRequest(
+                destinationId = destinationId,
+                dayId = dayId,
+                startTime = startTime,
+                endTime = endTime,
+                note = note
+            )
             val response = api.addDestinationToItinerary(authHeader, itineraryId, request)
 
             if (response.isSuccessful) {
                 Resource.Success(Unit)
             } else {
                 Resource.Error("Không thể thêm vào lịch trình")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun updateItineraryItem(
+        token: String,
+        itineraryId: Int,
+        itemId: Int,
+        body: UpdateItineraryItemRequest
+    ): Resource<Unit> {
+        return try {
+            val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
+            val response = api.updateItineraryItem(authHeader, itineraryId, itemId, body)
+            if (response.isSuccessful) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error("Không thể cập nhật hoạt động")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun deleteItineraryItem(token: String, itineraryId: Int, itemId: Int): Resource<Unit> {
+        return try {
+            val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
+            val response = api.deleteItineraryItem(authHeader, itineraryId, itemId)
+            if (response.isSuccessful) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error("Không thể xóa hoạt động")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun addItineraryDay(token: String, itineraryId: Int): Resource<Unit> {
+        return try {
+            val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
+            val response = api.addItineraryDay(authHeader, itineraryId)
+            if (response.isSuccessful) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error(response.parseErrorMessageOrNull() ?: "Không thể thêm ngày")
+            }
+        } catch (e: Exception) {
+            Resource.Error("Lỗi kết nối: ${e.message}")
+        }
+    }
+
+    suspend fun deleteItineraryDay(token: String, itineraryId: Int, dayId: Int): Resource<Unit> {
+        return try {
+            val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
+            val response = api.deleteItineraryDay(authHeader, itineraryId, dayId)
+            if (response.isSuccessful) {
+                Resource.Success(Unit)
+            } else {
+                Resource.Error(response.parseErrorMessageOrNull() ?: "Không thể xóa ngày")
             }
         } catch (e: Exception) {
             Resource.Error("Lỗi kết nối: ${e.message}")

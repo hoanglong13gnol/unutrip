@@ -1,0 +1,49 @@
+@startuml UserRegistration_Sequence
+!include _unutrip-sequence-theme.puml
+
+' UNU Trip — đăng ký; actor: User. Xuất PNG: VS Code PlantUML / plantuml.com
+
+title **Quy trình đăng ký người dùng**
+
+actor "**User**" as User
+
+participant "**Giao diện Web**" as UI <<Presentation>>
+participant "**AuthController**" as AC <<Application>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Mở trang đăng ký
+User -> UI : Nhập username / email / password
+User -> UI : Nhấn **Đăng ký**
+
+activate UI
+
+UI -> AC : **POST** `/register` (payload)
+activate AC
+
+AC -> AC : Kiểm tra dữ liệu đầu vào
+
+AC -> DB : **`SELECT`** user WHERE username/email = ?
+activate DB
+DB --> AC : user **hoặc** null
+deactivate DB
+
+AC -> AC : Mã hóa mật khẩu (**hash**)
+
+AC -> DB : **`INSERT`** User\n(+ CustomerProfile nếu có)
+activate DB
+DB --> AC : **OK**
+deactivate DB
+
+AC --> UI : Đăng ký thành công
+deactivate AC
+
+UI --> User : Chuyển sang trang đăng nhập
+deactivate UI
+
+legend right
+  **Ghi chú:** Trả về **null** khi username/email chưa tồn tại — cho phép tiếp tục INSERT.
+endlegend
+
+@enduml

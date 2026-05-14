@@ -1,0 +1,38 @@
+@startuml
+skinparam Shadowing false
+skinparam defaultFontSize 12
+
+title Luong quan tri du lieu UNU Trip Backend - /admin
+
+|Quản trị viên|
+start
+:B1: Muon vao khong gian quan tri thi nhap dia chi /admin\tren tien trinh trinh duyet;
+
+|Trình duyệt|
+:B2 Chi khi ADMIN BASIC USER va ADMIN BASIC PASS ton tai tai may chu\: trinh duyet hien popup Basic Authentication\nQuan tri nhap tai khoan mat khau;
+
+|Backend Node Express|
+:B3 Middleware doc header Authorization\: \nKhong doi env Basic - cho qua (dev)\nHoac doi Basic dung neu co env - so sanh timing safe voi bien ADMIN\nSai hoac thieu header - tra 401 text Unauthorized;
+
+|Quản trị viên|
+:B4 Chon noi dung\: tong quan dashboard\sCRUD nguoi dung\sCRUD dia diem\sTrang he thong\sRAG AI hoac bao cao AI;
+
+|Trình duyệt|
+:Gui cac HTTP GET POST toi route /admin theo menu;
+
+|Backend Node Express|
+:B5 Handler xu ly\: truy van cap nhat qua repository MySQL\nHoac fetch post toi FastAPI admin khi route can (vi du rag ai);
+
+|MySQL va FastAPI RAG|
+:Thuc hien ghi doc du lieu ung dung tren MySQL\nHoac xu ly API noi bo tren may chu RAG;
+
+|Backend Node Express|
+:Render HTML phia may chu hoac tra JSON;
+
+|Trình duyệt|
+:B6 Ve lai bang bieu mau KPI theo HTML tra ve;
+
+|Quản trị viên|
+stop
+
+@enduml

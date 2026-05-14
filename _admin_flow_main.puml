@@ -1,0 +1,37 @@
+@startuml
+skinparam Shadowing false
+
+title Luồng chính quản trị dữ liệu — /admin
+
+|Quản trị viên|
+start
+:Mở trang quản trị;
+
+|Trình duyệt|
+:Gửi yêu cầu tới máy chủ;
+
+|Máy chủ admin|
+:Kiểm tra Basic Auth khi được cấu hình;
+
+|Quản trị viên|
+:Chọn mục trên menu;
+
+|Trình duyệt|
+:Gửi thao tác cần thực hiện;
+
+|Máy chủ admin|
+:Điều phối chức năng và gọi đích backend;
+
+|Lưu trữ và RAG|
+:Cập nhật hoặc trả dữ liệu MySQL hoặc FastAPI RAG;
+
+|Máy chủ admin|
+:Dựng HTML hoặc JSON;
+
+|Trình duyệt|
+:Hiển thị cho quản trị viên;
+
+|Quản trị viên|
+stop
+
+@enduml

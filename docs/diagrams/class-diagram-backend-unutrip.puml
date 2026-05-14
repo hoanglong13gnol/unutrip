@@ -1,0 +1,235 @@
+@startuml class-diagram-backend-unutrip
+' Biểu đồ lớp Backend UNU Trip — cùng phong cách skinparam với er-diagram-unutrip-database
+' Chỉ **3 đường nối** giữa 4 tầng (không nối từng lớp với nhau)
+
+skinparam dpi 120
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam classAttributeIconSize 0
+
+skinparam backgroundColor #F4F4F4
+skinparam roundcorner 6
+
+skinparam title {
+  FontSize 18
+  FontColor #111111
+}
+
+skinparam class {
+  BackgroundColor #F9F9F9
+  BorderColor #222222
+  FontColor #111111
+}
+
+skinparam package {
+  BackgroundColor #EEEEEE
+  BorderColor #444444
+}
+
+skinparam arrow {
+  Color #222222
+  Thickness 2
+}
+
+title Biểu đồ lớp — Hệ thống UNU Trip (Backend API)
+
+hide circle
+top to bottom direction
+
+
+package "Tầng Controller\n(Điều khiển HTTP)" <<Rectangle>> as PKG_CTRL {
+
+  class "Xác thực Controller" as C_Auth <<controller>> {
+    +đăngKý()
+    +đăngNhập()
+    +đăngXuất()
+  }
+
+  class "Người dùng Controller" as C_User <<controller>> {
+    +hồSơ()
+    +thốngKê()
+    +cậpNhật()
+    +avatar()
+  }
+
+  class "Địa điểm Controller" as C_Dest <<controller>> {
+    +danhSách()
+    +chiTiết()
+    +nổiBật()
+    +lânCận()
+  }
+
+  class "Yêu thích Controller" as C_Fav <<controller>> {
+    +danhSách()
+    +thêm()
+    +gỡ()
+  }
+
+  class "Đánh giá Controller" as C_Rev <<controller>> {
+    +danhSách()
+    +tạo()
+  }
+
+  class "Lịch trình Controller" as C_Itin <<controller>> {
+    +CRUD()
+    +thêmĐiểm()
+    +lưuAI()
+  }
+
+  class "AI Controller" as C_AI <<controller>> {
+    +ragChat()
+    +chat()
+    +preview()
+    +options()
+    +suggest()
+  }
+
+  class "Sức khỏe Controller" as C_H <<controller>> {
+    +health()
+    +healthReady()
+  }
+}
+
+
+package "Tầng Dịch vụ\n(Service)" <<Rectangle>> as PKG_SVC {
+
+  class "Dịch vụ địa điểm" as S_Dest <<service>> {
+    +listPage()
+    +detail()
+    +featured()
+    +nearby()
+  }
+
+  class "Dịch vụ yêu thích" as S_Fav <<service>> {
+    +list()
+    +add()
+    +remove()
+  }
+
+  class "Dịch vụ đánh giá" as S_Rev <<service>> {
+    +createAggregate()
+  }
+
+  class "Dịch vụ lịch trình" as S_Itin <<service>> {
+    +saveAi()
+    +fromOption()
+    +fromSelection()
+    +CRUD()
+  }
+
+  class "Dịch vụ AI" as S_AI <<service>> {
+    +ragSimple()
+    +preview()
+    +options()
+    +suggest()
+    +fallbackChat()
+  }
+}
+
+
+package "Tầng Repository\n(Truy cập CSDL)" <<Rectangle>> as PKG_REP {
+
+  class "Kho người dùng" as R_User <<repository>> {
+    +getById()
+    +create()
+    +byEmail()
+    +update()
+    +countStats()
+  }
+
+  class "Kho địa điểm" as R_Dest <<repository>> {
+    +list()
+    +count()
+    +byId()
+  }
+
+  class "Kho yêu thích" as R_Fav <<repository>> {
+    +listByUser()
+    +insertIgnore()
+    +delete()
+  }
+
+  class "Kho đánh giá" as R_Rev <<repository>> {
+    +listByPlace()
+    +insert()
+    +aggregate()
+  }
+
+  class "Kho lịch trình" as R_Itin <<repository>> {
+    +listUser()
+    +insertTrip()
+    +insertDay()
+    +insertItem()
+    +update()
+    +delete()
+  }
+
+  class "Kho AI catalog" as R_AI <<repository>> {
+    +listPlacesForAi()
+  }
+}
+
+
+package "Tầng Thực thể\n(ánh xạ bảng CSDL)" <<Rectangle>> as PKG_ENT {
+
+  class "Người dùng" as E_User <<entity>> {
+    +id: int
+    +full_name: string
+    +email: string
+    +password_hash: string
+    +preferences_json: string
+  }
+
+  class "Địa điểm\n(app_places)" as E_Place <<entity>> {
+    +id: int
+    +place_key: string
+    +name: string
+    +province: string
+    +rating: decimal
+    +review_count: int
+  }
+
+  class "Yêu thích" as E_Fav <<entity>> {
+    +user_id: int
+    +destination_id: int
+  }
+
+  class "Đánh giá" as E_Rev <<entity>> {
+    +id: int
+    +rating: int
+    +comment: string
+    +images_json: string
+  }
+
+  class "Lịch trình" as E_Itin <<entity>> {
+    +id: int
+    +user_id: int
+    +title: string
+    +start_date: string
+    +total_days: int
+  }
+
+  class "Ngày / Mục lịch" as E_ItinSub <<entity>> {
+    +itinerary_days\n(itinerary_id, day_number)
+    +itinerary_items\n(day_id, destination_id)
+  }
+}
+
+
+' ----- Chỉ ba luồng phụ thuộc giữa các tầng -----
+PKG_CTRL -down-> PKG_SVC : <<định tuyến /\ngọi nghiệp vụ>>
+
+PKG_SVC -down-> PKG_REP : <<truy vấn /\nthực thi SQL>>
+
+PKG_REP -down-> PKG_ENT : <<ORM /\nhàng đơn giản>>
+
+
+legend bottom
+  **Ít đường nối:** chi tiết **Controller → Service → Repository** theo **từng miền** là đồng nhất tên module trong **`backend/nodejs/src/modules`** và **`services/`**.\\
+  **Xác thực** và **Người dùng** controller gọi **trực tiếp Kho người dùng** (không lớp Service riêng).\\
+  **Dịch vụ AI** gọi thêm **HTTP** tới **RAG FastAPI** và đôi khi phối hợp **Dịch vụ lịch trình** khi lưu lịch.\\
+  **Quan hệ bản số** giữa các thực thể: xem **er-diagram-unutrip-database.puml**.
+endlegend
+
+@enduml

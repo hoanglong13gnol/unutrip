@@ -149,7 +149,7 @@ interface ApiService {
     suspend fun updateItinerary(
         @Header("Authorization") token: String,
         @Path("id") id: Int,
-        @Body itinerary: Itinerary
+        @Body body: UpdateItineraryRequest
     ): Response<ApiResponse<Itinerary>>
 
     @DELETE("itineraries/{id}")
@@ -163,6 +163,34 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Path("id") itineraryId: Int,
         @Body request: AddItineraryItemRequest
+    ): Response<ApiResponse<Unit>>
+
+    @PUT("itineraries/{itineraryId}/items/{itemId}")
+    suspend fun updateItineraryItem(
+        @Header("Authorization") token: String,
+        @Path("itineraryId") itineraryId: Int,
+        @Path("itemId") itemId: Int,
+        @Body body: UpdateItineraryItemRequest
+    ): Response<ApiResponse<Unit>>
+
+    @DELETE("itineraries/{itineraryId}/items/{itemId}")
+    suspend fun deleteItineraryItem(
+        @Header("Authorization") token: String,
+        @Path("itineraryId") itineraryId: Int,
+        @Path("itemId") itemId: Int
+    ): Response<ApiResponse<Unit>>
+
+    @POST("itineraries/{id}/days")
+    suspend fun addItineraryDay(
+        @Header("Authorization") token: String,
+        @Path("id") itineraryId: Int
+    ): Response<ApiResponse<Unit>>
+
+    @DELETE("itineraries/{itineraryId}/days/{dayId}")
+    suspend fun deleteItineraryDay(
+        @Header("Authorization") token: String,
+        @Path("itineraryId") itineraryId: Int,
+        @Path("dayId") dayId: Int
     ): Response<ApiResponse<Unit>>
 
     @POST("itineraries/create-from-selection")

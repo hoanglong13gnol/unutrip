@@ -1,0 +1,44 @@
+' Theme chung — được include bởi các biểu đồ trình tự UNU Trip
+' Không chạy file này độc lập.
+
+skinparam dpi 120
+skinparam shadowing true
+skinparam handwritten false
+skinparam defaultFontName Verdana
+skinparam defaultFontSize 12
+
+skinparam backgroundColor #F8FAFC
+skinparam roundcorner 14
+skinparam ArrowThickness 1.5
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 22
+skinparam BoxPadding 14
+
+skinparam TitleFontSize 18
+skinparam TitleFontColor #0F172A
+
+skinparam actor {
+  BackgroundColor #DCFCE7
+  BorderColor #16A34A
+  FontColor #14532D
+}
+
+skinparam participant {
+  BackgroundColor #EFF6FF
+  BorderColor #2563EB
+  FontColor #1E3A8A
+}
+
+skinparam database {
+  BackgroundColor #FFF7ED
+  BorderColor #EA580C
+  FontColor #9A3412
+}
+
+skinparam sequence {
+  ArrowColor #334155
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  DividerBackgroundColor #E2E8F0
+  DividerBorderColor #CBD5E1
+}

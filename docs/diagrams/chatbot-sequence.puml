@@ -1,0 +1,41 @@
+@startuml Chatbot_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình chatbot / trợ lý AI**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**AiController**" as AIC <<Application>>
+participant "**RAG Service**\n(FastAPI)" as RAG <<AI>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Mở tab **Trợ lý AI**
+User -> UI : Soạn tin nhắn và nhấn **Gửi**
+
+activate UI
+
+UI -> AIC : **POST** `/ai/rag-chat`\n(message, top_k, mode, … + **Bearer** JWT)
+activate AIC
+
+AIC -> RAG : Proxy HTTP (vd. **`/rag/chat/simple`**)
+activate RAG
+
+RAG -> RAG : Retrieval **BM25 / hybrid** — ghép ngữ cảnh
+
+RAG --> AIC : Trả lời + metadata trích dẫn (nếu có)
+deactivate RAG
+
+AIC --> UI : **ChatResponse** (bubble bot)
+deactivate AIC
+
+UI --> User : Hiển thị phản hồi trợ lý
+
+deactivate UI
+
+legend right
+  **Dự phòng khi cần:** **`POST /api/ai/chat`** (fallback cục bộ / RAG secondary).\nLuồng chính trong app: **`/api/ai/rag-chat`**.
+endlegend
+
+@enduml

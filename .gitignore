@@ -22,14 +22,31 @@ local.properties
 
 !.env.example
 
-# Node dependencies
-node_modules/
-backend/nodejs/node_modules/
-
 # RAG generated intermediates & logs (keep repo lean; regenerate locally)
 backend/rag/_archive/
 backend/rag/reports/
 backend/rag/data/image_pipeline/reports/
+
+# Local tooling vendored binaries (retrieve on each machine if needed)
+.tools/
+
+# One-off rendered diagram folders from PlantUML previews (sources stay in-repo)
+_tmp_out/
+_tmp_out2/
+_tmp_out3/
+_tmp_puml_out/
+
+# Redundant bundle / archives (diagram sources are tracked)
+verified_uml.rar
+
+# Duplicate thesis Word copy (same blob as docx_doan/chuong_2_docx_baocao.docx)
+/chuong_2_docx_baocao.docx
+
+# Scratch screenshots at repo root (not part of diagrams/)
+/t2.png
+/t3.png
+/t4.png
+/test.png
 
 # Dependencies
 node_modules/

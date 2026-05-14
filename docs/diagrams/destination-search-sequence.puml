@@ -1,0 +1,42 @@
+@startuml DestinationSearch_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình tìm kiếm / lọc địa điểm**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**DestinationController**" as DC <<Application>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Mở **Khám phá** — nhập từ khóa / chọn tỉnh / danh mục
+User -> UI : Phân trang hoặc làm mới danh sách
+
+activate UI
+
+UI -> UI : Gắn **Authorization: Bearer** JWT
+
+UI -> DC : **GET** `/destinations`\n**?**page, limit, category, province, search, sort
+activate DC
+
+DC -> DC : Chuẩn hóa tham số (normalize category, giới hạn page/limit)
+
+DC -> DB : **`SELECT`** địa điểm (lọc + đếm **total** + cờ yêu thích user)
+activate DB
+DB --> DC : rows + total
+deactivate DB
+
+DC --> UI : **200** success, **data[]**, total, page, limit
+deactivate DC
+
+UI --> User : Hiển thị danh sách địa điểm
+
+deactivate UI
+
+legend right
+  **Biến thể:** **`GET /destinations/nearby`** (lat, lng, radiusKm);\n**`GET /destinations/featured`** (gợi ý nổi bật).
+endlegend
+
+@enduml

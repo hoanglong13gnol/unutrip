@@ -1,0 +1,78 @@
+@startuml AiRagItinerary_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình gợi ý lịch trình bằng AI / RAG**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**AiController**" as AIC <<Application>>
+participant "**RAG Service**\n(FastAPI)" as RAG <<AI>>
+participant "**LLM**\n(ví dụ Gemini)" as LLM <<External>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Nhập nhu cầu / ngày / ngân sách;\nmở luồng **AI tour** hoặc **Suggest**
+
+activate UI
+
+== Luồng A — Preview / nhiều phương án ==
+
+UI -> AIC : **POST** `/ai/itinerary-preview`\nhoặc `/ai/itinerary-options`
+activate AIC
+AIC -> RAG : HTTP — retrieval + sinh nội dung
+activate RAG
+opt Sinh văn bản / JSON qua LLM
+  RAG -> LLM : Prompt + ngữ cảnh đã truy xuất
+  activate LLM
+  LLM --> RAG : Phương án / nội dung gợi ý
+  deactivate LLM
+end
+RAG --> AIC : Preview hoặc danh sách option
+deactivate RAG
+AIC --> UI : **200** (cấu trúc app mong đợi)
+deactivate AIC
+
+User -> UI : Chọn phương án · chỉnh sửa · **Lưu**
+
+UI -> AIC : **POST** `/itineraries/save-ai`\nhoặc `/itineraries/create-from-option`
+activate AIC
+AIC -> DB : **`INSERT`** itinerary + items\n(map **rawPlaceId** / địa điểm)
+activate DB
+DB --> AIC : OK
+deactivate DB
+AIC --> UI : Thành công
+deactivate AIC
+
+== Luồng B — Gợi ý một lần (suggest-itinerary) ==
+
+UI -> AIC : **POST** `/ai/suggest-itinerary`\n(preferences, startDate, endDate, …)
+activate AIC
+AIC -> AIC : **AiService** — catalog → prompt → RAG/local
+AIC -> RAG : Truy vấn / sinh JSON lịch
+activate RAG
+opt Sinh / làm giàu qua LLM
+  RAG -> LLM : Prompt + kết quả retrieval
+  activate LLM
+  LLM --> RAG : JSON / văn bản gợi ý
+  deactivate LLM
+end
+RAG --> AIC : Cấu trúc gợi ý
+deactivate RAG
+AIC -> DB : **`INSERT`** itinerary đã chuẩn hóa
+activate DB
+DB --> AIC : OK
+deactivate DB
+AIC --> UI : **200** itinerary mới
+deactivate AIC
+
+UI --> User : Xem lịch trong **Lịch trình**
+
+deactivate UI
+
+legend right
+  **Hai khối Luồng A / B** là **hai kịch bản khác nhau** trong app, không bắt buộc trong một phiên.\nNode gọi RAG qua **`RAG_BASE_URL`** (Compose: **`http://rag:8001`**).\nKhóa **`RAG_INTERNAL_API_KEY`** (nếu cấu hình) cho luồng nội bộ.
+endlegend
+
+@enduml

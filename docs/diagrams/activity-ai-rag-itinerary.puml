@@ -1,0 +1,74 @@
+@startuml ActivityAiRagItinerary
+' Biểu đồ hoạt động — Gợi ý lịch trình AI / RAG
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Gợi ý lịch trình AI/RAG**
+
+start
+
+:Nhập mong muốn (**ngày**, sở thích, ngân sách…);
+
+:Gửi yêu cầu lên máy chủ (**preview / options**\nhoặc **suggest-itinerary**);
+
+:Máy chủ gọi **RAG (FastAPI)** và LLM\nđể truy xuất + sinh gợi ý;
+
+if (**Nhận phương án hợp lệ?**) then (Không)
+  :Thông báo không tạo được gợi ý;
+  stop
+else (Có)
+endif
+
+:Hiển thị **phương án** để xem / chỉnh;
+
+if (**Người dùng lưu lịch?**) then (Không)
+  :Thoát hoặc chỉnh lại yêu cầu;
+  stop
+else (Có)
+endif
+
+:**Lưu** lịch vào CSDL (**save-ai** / **create-from-option**\nhoặc đã lưu sau suggest);
+
+:Thông báo thành công và hiển thị trong **Lịch trình**;
+
+stop
+
+@enduml

@@ -1,0 +1,34 @@
+@startuml MapView_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình xem bản đồ**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**OSM Tile**" as TILE <<CDN>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Chọn **Xem bản đồ** từ chi tiết địa điểm\n(hoặc cấp quyền **vị trí** hiện tại)
+
+activate UI
+
+UI -> UI : Cấu hình **OSMDroid** — User-Agent = packageName
+UI -> UI : **MapView** + **TileSourceFactory**
+UI -> UI : Đặt **Marker** tại (lat, lng) từ đối số điều hướng
+
+loop Vuốt / thu phóng bản đồ
+  UI -> TILE : **HTTP GET** ô bản đồ (XYZ tiles)
+  TILE --> UI : ảnh ô lưới
+end
+
+UI --> User : Bản đồ OpenStreetMap + ghim điểm đến
+
+deactivate UI
+
+legend right
+  **Tọa độ** thường lấy từ **chi tiết địa điểm** đã tải qua **`GET /destinations/{id}`**.\nKhông bắt buộc gọi thêm API backend chỉ để hiển thị bản đồ.
+endlegend
+
+@enduml

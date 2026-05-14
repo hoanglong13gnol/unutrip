@@ -1,0 +1,126 @@
+# UNUtrip stack: MySQL + Redis + FastAPI RAG + Node backend
+#
+# Prerequisites:
+#   cp .env.example .env   (set GEMINI_API_KEY, JWT_SECRET, DB passwords at minimum)
+#
+# Run:
+#   docker compose up -d --build
+#
+# Backend:     http://localhost:3000/api/health
+# RAG docs:    http://localhost:8001/docs
+# MySQL:       localhost:3306 (see MYSQL_* variables)
+#
+# Note: Không tự migrate schema đầy đủ vào MySQL — cần import dump SQL của bạn
+# vào DB ${DB_NAME:-unudata} sau khi container mysql healthy.
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-unutrip_root_secret}
+      MYSQL_DATABASE: ${DB_NAME:-unudata}
+      MYSQL_USER: ${MYSQL_USER:-unutrip}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-unutrip_pass}
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-3306}:3306"
+    volumes:
+      - unutrip_mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - unutrip_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rag:
+    build:
+      context: ./backend/rag
+      dockerfile: Dockerfile
+    ports:
+      - "${RAG_PUBLISH_PORT:-8001}:8001"
+    env_file:
+      - .env
+    environment:
+      # Override host-specific defaults from .env when running inside Compose
+      REDIS_URL: redis://redis:6379/0
+      RAG_CORS_ORIGINS: ${RAG_CORS_ORIGINS:-http://localhost:3000}
+      RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY:-}
+      RAG_ADMIN_API_KEY: ${RAG_ADMIN_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health').read()\""
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  backend:
+    build:
+      context: ./backend/nodejs
+      dockerfile: Dockerfile
+    ports:
+      - "${BACKEND_PUBLISH_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      # development: cho phép JWT_SECRET mặc định trong code. Production: đặt NODE_ENV=production + JWT_SECRET mạnh.
+      NODE_ENV: ${NODE_ENV:-development}
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 3000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-unutrip}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-unutrip_pass}
+      DB_NAME: ${DB_NAME:-unudata}
+      RAG_BASE_URL: http://rag:8001
+      RAG_INTERNAL_API_KEY: ${RAG_INTERNAL_API_KEY:-}
+      RAG_ADMIN_API_KEY: ${RAG_ADMIN_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+    volumes:
+      - unutrip_backend_uploads:/app/uploads
+      - unutrip_backend_public_images:/app/public/images
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rag:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  unutrip_mysql_data:
+  unutrip_redis_data:
+  unutrip_backend_uploads:
+  unutrip_backend_public_images:

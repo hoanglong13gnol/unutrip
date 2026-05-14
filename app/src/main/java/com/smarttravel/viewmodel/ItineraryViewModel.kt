@@ -12,6 +12,9 @@ import com.smarttravel.data.model.CreateItineraryFromSelectionRequest
 import com.smarttravel.data.model.CreateItineraryFromSelectionResult
 import com.smarttravel.data.model.CreateItineraryRequest
 import com.smarttravel.data.model.Itinerary
+import com.smarttravel.data.model.ItineraryItem
+import com.smarttravel.data.model.UpdateItineraryItemRequest
+import com.smarttravel.data.model.UpdateItineraryRequest
 import com.smarttravel.data.model.SaveAIItineraryRequest
 import com.smarttravel.data.model.SelectedAIDestination
 import com.smarttravel.data.repository.DestinationRepository
@@ -110,6 +113,143 @@ class ItineraryViewModel(
         viewModelScope.launch {
             repo.deleteItinerary(token, id)
             loadItineraries()
+        }
+    }
+
+    fun updateItineraryMeta(
+        id: Int,
+        title: String,
+        description: String?,
+        startDate: String,
+        endDate: String,
+        estimatedBudget: Double?,
+        status: String
+    ) {
+        viewModelScope.launch {
+            val body = UpdateItineraryRequest(
+                title = title,
+                description = description,
+                startDate = startDate,
+                endDate = endDate,
+                status = status,
+                estimatedBudget = estimatedBudget
+            )
+            when (val r = repo.updateItinerary(token, id, body)) {
+                is Resource.Success -> {
+                    _messages.value = "Đã cập nhật thông tin lịch trình"
+                    loadDetail(id)
+                }
+                is Resource.Error -> {
+                    _messages.value = r.message
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun addItemToItinerary(
+        itineraryId: Int,
+        dayId: Int,
+        destinationId: Int,
+        startTime: String? = "09:00",
+        endTime: String? = "11:00",
+        note: String? = null
+    ) {
+        viewModelScope.launch {
+            when (
+                val r = repo.addDestination(
+                    token,
+                    itineraryId,
+                    destinationId,
+                    dayId,
+                    startTime,
+                    endTime,
+                    note
+                )
+            ) {
+                is Resource.Success -> {
+                    _messages.value = "Đã thêm địa điểm"
+                    loadDetail(itineraryId)
+                }
+                is Resource.Error -> {
+                    _messages.value = r.message
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun updateItineraryItem(
+        itineraryId: Int,
+        item: ItineraryItem,
+        dayId: Int,
+        startTime: String,
+        endTime: String,
+        note: String?
+    ) {
+        viewModelScope.launch {
+            val body = UpdateItineraryItemRequest(
+                dayId = dayId,
+                destinationId = item.destinationId,
+                startTime = startTime,
+                endTime = endTime,
+                note = note
+            )
+            when (val r = repo.updateItineraryItem(token, itineraryId, item.id, body)) {
+                is Resource.Success -> {
+                    _messages.value = "Đã cập nhật hoạt động"
+                    loadDetail(itineraryId)
+                }
+                is Resource.Error -> {
+                    _messages.value = r.message
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun deleteItineraryItem(itineraryId: Int, itemId: Int) {
+        viewModelScope.launch {
+            when (val r = repo.deleteItineraryItem(token, itineraryId, itemId)) {
+                is Resource.Success -> {
+                    _messages.value = "Đã xóa hoạt động"
+                    loadDetail(itineraryId)
+                }
+                is Resource.Error -> {
+                    _messages.value = r.message
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun addItineraryDay(itineraryId: Int) {
+        viewModelScope.launch {
+            when (val r = repo.addItineraryDay(token, itineraryId)) {
+                is Resource.Success -> {
+                    _messages.value = "Đã thêm ngày mới"
+                    loadDetail(itineraryId)
+                }
+                is Resource.Error -> {
+                    _messages.value = r.message
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun deleteItineraryDay(itineraryId: Int, dayId: Int) {
+        viewModelScope.launch {
+            when (val r = repo.deleteItineraryDay(token, itineraryId, dayId)) {
+                is Resource.Success -> {
+                    _messages.value = "Đã xóa ngày"
+                    loadDetail(itineraryId)
+                }
+                is Resource.Error -> {
+                    _messages.value = r.message
+                }
+                else -> {}
+            }
         }
     }
 

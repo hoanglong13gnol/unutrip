@@ -1,0 +1,51 @@
+@startuml
+skinparam shadowing false
+
+title Quản trị dữ liệu UNU Trip /admin
+
+|Quản trị viên|
+start
+:Mở trình duyệt\nvào /admin;
+
+|Trình duyệt|
+:Gửi yêu cầu HTTP GET;
+
+|Backend Node|
+:Áp dụng Basic Auth\n(khi có cấu hình);
+:Định tuyến và xử lý;
+
+|CSDL và RAG|
+:Đọc/ghi MySQL\nkhi cần;
+
+|Backend Node|
+:Trả HTML / JSON;
+
+|Trình duyệt|
+:Hiển thị kết quả;
+
+|Quản trị viên|
+if (Giám sát và vận hành RAG?) then (Không)
+
+else (Có)
+
+|Trình duyệt|
+:GET rag-ai hoặc\nPOST vận hành;
+
+|Backend Node|
+:Proxy tới FastAPI;
+
+|CSDL và RAG|
+:Cung cấp snapshot\nhoặc thực thi RAG;
+
+|Backend Node|
+:Cập nhật trang KPI;
+
+|Trình duyệt|
+:Hiển thị RAG Monitor;
+
+endif
+
+|Quản trị viên|
+stop
+
+@enduml

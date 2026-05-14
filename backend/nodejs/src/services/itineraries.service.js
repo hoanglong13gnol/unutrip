@@ -145,6 +145,14 @@ export async function addItineraryItem({ userId, itineraryId, payload }) {
       return { ok: false, reason: "no_days" };
     }
     targetDayId = firstDayId;
+  } else {
+    const dayRow = await itinerariesRepository.getItineraryDayByIdForItinerary({
+      dayId: targetDayId,
+      itineraryId
+    });
+    if (!dayRow) {
+      return { ok: false, reason: "invalid_day" };
+    }
   }
 
   const maxIdx = await itinerariesRepository.getMaxOrderIndexByDayId(targetDayId);
@@ -159,6 +167,156 @@ export async function addItineraryItem({ userId, itineraryId, payload }) {
     note: note || ""
   });
 
+  return { ok: true };
+}
+
+export async function updateItineraryItemForUser({ userId, itineraryId, itemId, payload }) {
+  const it = await itinerariesRepository.getItineraryByIdForUser({ itineraryId, userId });
+  if (!it) {
+    return { ok: false, reason: "not_authorized" };
+  }
+
+  const row = await itinerariesRepository.getItineraryItemJoinDayById(itemId);
+  if (!row || Number(row.itinerary_id) !== Number(itineraryId)) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const nextDayId = payload.dayId !== undefined ? Number(payload.dayId) : Number(row.day_id);
+  if (nextDayId !== Number(row.day_id)) {
+    const dayRow = await itinerariesRepository.getItineraryDayByIdForItinerary({
+      dayId: nextDayId,
+      itineraryId
+    });
+    if (!dayRow) {
+      return { ok: false, reason: "invalid_day" };
+    }
+  }
+
+  const nextDestinationId =
+    payload.destinationId !== undefined ? Number(payload.destinationId) : Number(row.destination_id);
+
+  const nextStart = payload.startTime !== undefined ? payload.startTime : row.start_time;
+  const nextEnd = payload.endTime !== undefined ? payload.endTime : row.end_time;
+  const nextNote = payload.note !== undefined ? payload.note : row.note;
+  const nextOrder =
+    payload.orderIndex !== undefined ? Number(payload.orderIndex) : Number(row.order_index);
+
+  if (!nextDestinationId) {
+    return { ok: false, reason: "missing_destination_id" };
+  }
+
+  await itinerariesRepository.updateItineraryItemById({
+    itemId,
+    dayId: nextDayId,
+    destinationId: nextDestinationId,
+    startTime: nextStart,
+    endTime: nextEnd,
+    note: nextNote,
+    orderIndex: nextOrder
+  });
+
+  return { ok: true };
+}
+
+function plusOneCalendarDay(isoDate) {
+  const base = toIsoDate(isoDate);
+  const d = new Date(base);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function dateOffsetFromStart(startIso, indexZeroBased) {
+  const d = new Date(toIsoDate(startIso));
+  d.setDate(d.getDate() + indexZeroBased);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function addItineraryDayForUser({ userId, itineraryId }) {
+  const it = await itinerariesRepository.getItineraryByIdForUser({ itineraryId, userId });
+  if (!it) {
+    return { ok: false, reason: "not_authorized" };
+  }
+
+  await withTransaction(async (conn) => {
+    const days = await itinerariesRepository.listItineraryDaysByItineraryIdConn(itineraryId, conn);
+    const nextNum = days.length + 1;
+    const newDate =
+      days.length === 0
+        ? toIsoDate(it.start_date)
+        : plusOneCalendarDay(days[days.length - 1].date);
+
+    await itinerariesRepository.insertItineraryDay(
+      { itineraryId, dayNumber: nextNum, date: newDate },
+      conn
+    );
+    await itinerariesRepository.updateItineraryEndAndTotalByUser(
+      { itineraryId, userId, endDate: newDate, totalDays: nextNum },
+      conn
+    );
+  });
+
+  return { ok: true };
+}
+
+export async function deleteItineraryDayForUser({ userId, itineraryId, dayId }) {
+  const it = await itinerariesRepository.getItineraryByIdForUser({ itineraryId, userId });
+  if (!it) {
+    return { ok: false, reason: "not_authorized" };
+  }
+
+  const dayRow = await itinerariesRepository.getItineraryDayByIdForItinerary({
+    dayId,
+    itineraryId
+  });
+  if (!dayRow) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const daysBefore = await itinerariesRepository.listItineraryDaysByItineraryId(itineraryId);
+  if (daysBefore.length <= 1) {
+    return { ok: false, reason: "last_day" };
+  }
+
+  await withTransaction(async (conn) => {
+    await itinerariesRepository.deleteItineraryDayByIdForItinerary({ dayId, itineraryId }, conn);
+    const remaining = await itinerariesRepository.listItineraryDaysByItineraryIdConn(
+      itineraryId,
+      conn
+    );
+    const startIso = toIsoDate(it.start_date);
+    for (let i = 0; i < remaining.length; i += 1) {
+      const row = remaining[i];
+      const newNum = i + 1;
+      const newDate = dateOffsetFromStart(startIso, i);
+      await itinerariesRepository.updateItineraryDayNumberAndDate(
+        { dayId: row.id, dayNumber: newNum, date: newDate },
+        conn
+      );
+    }
+    const newTotal = remaining.length;
+    const newEnd =
+      newTotal === 0 ? startIso : dateOffsetFromStart(startIso, newTotal - 1);
+    await itinerariesRepository.updateItineraryEndAndTotalByUser(
+      { itineraryId, userId, endDate: newEnd, totalDays: newTotal },
+      conn
+    );
+  });
+
+  return { ok: true };
+}
+
+export async function deleteItineraryItemForUser({ userId, itineraryId, itemId }) {
+  const it = await itinerariesRepository.getItineraryByIdForUser({ itineraryId, userId });
+  if (!it) {
+    return { ok: false, reason: "not_authorized" };
+  }
+
+  const row = await itinerariesRepository.getItineraryItemJoinDayById(itemId);
+  if (!row || Number(row.itinerary_id) !== Number(itineraryId)) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  await itinerariesRepository.deleteItineraryItemById(itemId);
   return { ok: true };
 }
 

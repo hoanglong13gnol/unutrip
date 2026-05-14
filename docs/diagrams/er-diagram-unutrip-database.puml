@@ -1,0 +1,156 @@
+@startuml er-diagram-unutrip-database
+' Sơ đồ CSDL UNU Trip — định dạng entity (tương thích PlantUML jar)
+
+skinparam dpi 120
+skinparam backgroundColor #F4F4F4
+skinparam roundcorner 6
+
+skinparam entity {
+  BackgroundColor #F9F9F9
+  BorderColor #222222
+}
+
+title Sơ đồ cơ sở dữ liệu hệ thống UNU Trip
+
+hide circle
+
+entity users as "users\n(Người dùng)" {
+  * id : INT <<PK>>
+  --
+  * full_name : TEXT
+  * email : VARCHAR(255) <<UK>>
+  * password_hash : TEXT
+  phone : VARCHAR(20)
+  avatar : TEXT
+  preferences_json : TEXT
+  * created_at : DATETIME
+}
+
+entity app_places as "app_places\n(Địa điểm v2)" {
+  * id : INT <<PK>>
+  --
+  * place_key : VARCHAR(50) <<UK>>
+  * name : VARCHAR(500)
+  * description : TEXT
+  province : VARCHAR(255)
+  city : VARCHAR(255)
+  latitude : DOUBLE
+  longitude : DOUBLE
+  category : ENUM
+  rating : DECIMAL
+  review_count : INT
+  is_active : TINYINT
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity favorites as "favorites\n(Yêu thích)" {
+  * user_id : INT <<FK>>
+  * destination_id : INT <<FK>>
+  --
+  * created_at : DATETIME
+}
+
+entity reviews as "reviews\n(Đánh giá)" {
+  * id : INT <<PK>>
+  --
+  * user_id : INT <<FK>>
+  * destination_id : INT <<FK>>
+  * rating : DOUBLE
+  * comment : TEXT
+  images_json : TEXT
+  * created_at : DATETIME
+}
+
+entity itineraries as "itineraries\n(Lịch trình)" {
+  * id : INT <<PK>>
+  --
+  * user_id : INT <<FK>>
+  * title : TEXT
+  description : TEXT
+  * start_date : VARCHAR(50)
+  * end_date : VARCHAR(50)
+  * total_days : INT
+  * status : VARCHAR(50)
+  estimated_budget : DOUBLE
+  * created_at : DATETIME
+}
+
+entity itinerary_days as "itinerary_days\n(Ngày trong lịch)" {
+  * id : INT <<PK>>
+  --
+  * itinerary_id : INT <<FK>>
+  * day_number : INT
+  * date : VARCHAR(50)
+}
+
+entity itinerary_items as "itinerary_items\n(Mục trong ngày)" {
+  * id : INT <<PK>>
+  --
+  * day_id : INT <<FK>>
+  * destination_id : INT <<FK>>
+  * start_time : VARCHAR(20)
+  * end_time : VARCHAR(20)
+  note : TEXT
+  * order_index : INT
+}
+
+entity place_images as "place_images\n(Ảnh địa điểm)" {
+  * id : BIGINT <<PK>>
+  --
+  * app_place_id : INT <<FK>>
+  place_key : VARCHAR(50)
+  * image_url : TEXT
+  is_primary : TINYINT
+  * status : VARCHAR(50)
+  created_at : TIMESTAMP
+}
+
+entity rag_knowledge_base as "rag_knowledge_base\n(Kiến thức RAG)" {
+  * id : BIGINT <<PK>>
+  --
+  * knowledge_key : VARCHAR(100) <<UK>>
+  place_key : VARCHAR(50)
+  app_place_id : INT <<FK>>
+  * knowledge_type : VARCHAR(50)
+  content : LONGTEXT
+  summary : TEXT
+  is_active : TINYINT
+  updated_at : TIMESTAMP
+}
+
+entity place_id_map as "place_id_map\n(Ánh xạ id)" {
+  * id : BIGINT <<PK>>
+  --
+  old_destination_id : INT
+  rag_place_id : VARCHAR(50)
+  * new_app_place_id : INT <<FK>>
+  * place_key : VARCHAR(100) <<UK>>
+  notes : VARCHAR(500)
+  created_at : TIMESTAMP
+}
+
+users ||--o{ favorites : "có"
+app_places ||--o{ favorites : "được yêu thích"
+
+users ||--o{ reviews : "viết"
+app_places ||--o{ reviews : "nhận"
+
+users ||--o{ itineraries : "sở hữu"
+itineraries ||--|{ itinerary_days : "gồm"
+itinerary_days ||--|{ itinerary_items : "có mục"
+app_places ||--o{ itinerary_items : "địa điểm"
+
+app_places ||--o{ place_images : "ảnh"
+
+app_places ||--o{ rag_knowledge_base : "liên kết"
+
+app_places ||--o{ place_id_map : "ánh xạ"
+
+note bottom of app_places
+  Runtime API đọc **app_places**.\\
+  File **database.sql** còn bảng legacy **destinations**\\
+  (cùng không gian **id** sau migrate).
+end note
+
+@enduml

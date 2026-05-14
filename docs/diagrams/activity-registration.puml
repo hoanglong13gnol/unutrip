@@ -1,0 +1,75 @@
+@startuml ActivityRegistration
+' Biểu đồ hoạt động — Đăng ký (gọn, không swimlane — chạy ổn định PlantUML)
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+' Giãn theo chiều ngang (nhánh Có/Không tách xa; khung xuất rộng hơn)
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Đăng ký**
+
+start
+
+:Mở trang đăng ký;
+
+:Nhập thông tin và nhấn **Đăng ký**;
+
+:Kiểm tra dữ liệu nhập;
+
+if (**Hợp lệ?**) then (Không)
+  :Thông báo lỗi nhập liệu;
+  stop
+else (Có)
+endif
+
+:Kiểm tra trùng email trong CSDL;
+
+if (**Trùng?**) then (Có)
+  :Thông báo trùng thông tin;
+  stop
+else (Không)
+endif
+
+:Mã hóa mật khẩu và **lưu** vào CSDL;
+
+:Thông báo thành công và\nchuyển sang đăng nhập;
+
+stop
+
+@enduml

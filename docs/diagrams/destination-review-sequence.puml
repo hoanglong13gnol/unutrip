@@ -1,0 +1,62 @@
+@startuml DestinationReview_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình đánh giá địa điểm**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**ReviewController**" as RC <<Application>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+participant "**Thư mục uploads**" as FS <<Storage>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Mở **chi tiết địa điểm** — khu vực đánh giá
+
+activate UI
+
+UI -> RC : **GET** `/destinations/{id}/reviews` (**Bearer**)
+activate RC
+
+RC -> DB : **`SELECT`** reviews (và thông tin ảnh nếu có)
+activate DB
+DB --> RC : danh sách
+deactivate DB
+
+RC --> UI : **200** danh sách đánh giá
+deactivate RC
+
+UI --> User : Hiển thị sao và bình luận
+
+User -> UI : Chọn **rating**, nhập nhận xét;\ntùy chọn đính **≤ 3 ảnh**
+
+UI -> RC : **POST** `/reviews` (**multipart**/JSON theo client)
+activate RC
+
+RC -> RC : Kiểm tra quyền & validate
+
+opt Có file ảnh đính kèm
+  RC -> FS : Lưu file (**multer** → uploads)
+  activate FS
+  FS --> RC : URL / relative path phục vụ client
+  deactivate FS
+end
+
+RC -> DB : **`INSERT`** review (+ URL ảnh)
+activate DB
+DB --> RC : OK
+deactivate DB
+
+RC --> UI : **200** review mới (DTO)
+deactivate RC
+
+UI --> User : Cập nhật danh sách đánh giá ngay trên màn hình
+
+deactivate UI
+
+legend right
+  **`POST /reviews`** trong backend hỗ trợ **`upload.array("images", 3)`** cho ảnh kèm theo.
+endlegend
+
+@enduml

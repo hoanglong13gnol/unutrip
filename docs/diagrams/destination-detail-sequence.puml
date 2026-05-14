@@ -1,0 +1,37 @@
+@startuml DestinationDetail_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình xem chi tiết địa điểm**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**DestinationController**" as DC <<Application>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Chọn một địa điểm trong danh sách
+
+activate UI
+
+UI -> DC : **GET** `/destinations/{id}` (**Bearer** JWT)
+activate DC
+
+DC -> DB : **`SELECT`** chi tiết + ảnh + trạng thái yêu thích
+activate DB
+DB --> DC : destination **hoặc** không có
+deactivate DB
+
+alt Không tìm thấy (**404**)
+  DC --> UI : Not found
+  UI --> User : Thông báo không có dữ liệu
+else Thành công (**200**)
+  DC --> UI : DTO chi tiết địa điểm
+  UI --> User : Ảnh, mô tả, nút yêu thích / bản đồ / đánh giá
+end
+
+deactivate DC
+deactivate UI
+
+@enduml

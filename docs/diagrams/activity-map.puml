@@ -1,0 +1,63 @@
+@startuml ActivityMap
+' Biểu đồ hoạt động — Xem bản đồ (OSMDroid + OSM)
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Xem bản đồ**
+
+start
+
+:Từ chi tiết địa điểm chọn **Xem bản đồ**;
+
+:Lấy tọa độ và khởi tạo **OSMDroid**;
+
+:Ghim điểm và **tải ô** bản đồ OpenStreetMap;
+
+if (**Cần quyền vị trí?**) then (Có)
+  :Xin quyền và (tùy chọn)\nlấy vị trí hiện tại;
+else (Không)
+endif
+
+:Người dùng **xem / zoom / di chuyển** bản đồ;
+
+stop
+
+@enduml

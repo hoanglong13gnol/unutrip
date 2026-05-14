@@ -1,0 +1,63 @@
+@startuml ActivityChatbot
+' Biểu đồ hoạt động — Chatbot / Trợ lý AI
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Chatbot**
+
+start
+
+:Mở tab **Trợ lý AI**;
+
+:Soạn tin nhắn và nhấn **Gửi**;
+
+:Máy chủ nhận **rag-chat** và gọi **RAG**;
+
+if (**RAG trả lời được?**) then (Không)
+  :(Tùy cấu hình) **chat** dự phòng\ncục bộ hoặc báo lỗi;
+else (Có)
+endif
+
+:Hiển thị câu trả lời trong khung hội thoại;
+
+stop
+
+@enduml

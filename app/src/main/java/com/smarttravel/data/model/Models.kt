@@ -143,12 +143,30 @@ data class CreateItineraryRequest(
     val destinationIds: List<Int>? = null
 )
 
+data class UpdateItineraryRequest(
+    val title: String,
+    val description: String? = null,
+    val startDate: String,
+    val endDate: String,
+    val status: String? = null,
+    val estimatedBudget: Double? = null
+)
+
 data class AddItineraryItemRequest(
     val destinationId: Int,
     val dayId: Int? = null,
     val startTime: String? = null,
     val endTime: String? = null,
     val note: String? = null
+)
+
+data class UpdateItineraryItemRequest(
+    val dayId: Int? = null,
+    val destinationId: Int? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val note: String? = null,
+    val orderIndex: Int? = null
 )
 
 data class ItineraryResponse(

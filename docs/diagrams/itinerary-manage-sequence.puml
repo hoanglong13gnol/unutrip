@@ -1,0 +1,85 @@
+@startuml ItineraryManage_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình quản lý lịch trình**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**ItineraryController**" as IC <<Application>>
+database "**CSDL MySQL**" as DB <<Persistence>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Mở tab **Lịch trình**
+
+activate UI
+
+UI -> IC : **GET** `/itineraries` (**Bearer** JWT)
+activate IC
+
+IC -> DB : **`SELECT`** itineraries của user
+activate DB
+DB --> IC : danh sách
+deactivate DB
+
+IC --> UI : **200** data[]
+deactivate IC
+
+UI --> User : Hiển thị các chuyến đã lưu
+
+User -> UI : Chọn thao tác: **tạo / sửa / thêm điểm / xóa**
+
+opt Tạo lịch mới
+  UI -> IC : **POST** `/itineraries`
+  activate IC
+  IC -> DB : **`INSERT`** itinerary (+ metadata)
+  activate DB
+  DB --> IC : id mới
+  deactivate DB
+  IC --> UI : **200** itinerary
+  deactivate IC
+end
+
+opt Cập nhật tiêu đề / ngày…
+  UI -> IC : **PUT** `/itineraries/{id}`
+  activate IC
+  IC -> DB : **`UPDATE`**
+  activate DB
+  DB --> IC : OK
+  deactivate DB
+  IC --> UI : **200**
+  deactivate IC
+end
+
+opt Thêm địa điểm vào một ngày
+  UI -> IC : **POST** `/itineraries/{id}/items`
+  activate IC
+  IC -> DB : **`INSERT`** itinerary_item
+  activate DB
+  DB --> IC : OK
+  deactivate DB
+  IC --> UI : **200**
+  deactivate IC
+end
+
+opt Xóa lịch
+  UI -> IC : **DELETE** `/itineraries/{id}`
+  activate IC
+  IC -> DB : **`DELETE`** (theo quy tắc app)
+  activate DB
+  DB --> IC : OK
+  deactivate DB
+  IC --> UI : **200**
+  deactivate IC
+end
+
+UI --> User : Danh sách đồng bộ với server
+
+deactivate UI
+
+legend right
+  Lịch sinh từ AI: **`POST /itineraries/save-ai`** hoặc **`/ai/suggest-itinerary`** — xem biểu đồ **AI/RAG** riêng.
+endlegend
+
+@enduml

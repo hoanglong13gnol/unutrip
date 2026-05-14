@@ -149,3 +149,86 @@ export async function updateItineraryByIdForUser({
 export async function deleteItineraryByIdForUser({ itineraryId, userId }) {
   await db.run("DELETE FROM itineraries WHERE id = ? AND user_id = ?", [itineraryId, userId]);
 }
+
+export async function getItineraryDayByIdForItinerary({ dayId, itineraryId }) {
+  return db.get("SELECT * FROM itinerary_days WHERE id = ? AND itinerary_id = ?", [dayId, itineraryId]);
+}
+
+export async function getItineraryItemJoinDayById(itemId) {
+  return db.get(
+    `
+      SELECT ii.*, idy.itinerary_id AS itinerary_id
+      FROM itinerary_items ii
+      JOIN itinerary_days idy ON idy.id = ii.day_id
+      WHERE ii.id = ?
+    `,
+    [itemId]
+  );
+}
+
+export async function updateItineraryItemById({
+  itemId,
+  dayId,
+  destinationId,
+  startTime,
+  endTime,
+  note,
+  orderIndex
+}) {
+  await db.run(
+    `
+      UPDATE itinerary_items
+      SET day_id = ?, destination_id = ?, start_time = ?, end_time = ?, note = ?, order_index = ?
+      WHERE id = ?
+    `,
+    [dayId, destinationId, startTime, endTime, note ?? null, orderIndex, itemId]
+  );
+}
+
+export async function deleteItineraryItemById(itemId) {
+  await db.run("DELETE FROM itinerary_items WHERE id = ?", [itemId]);
+}
+
+export async function listItineraryDaysByItineraryIdConn(itineraryId, conn) {
+  const runner = getRunner(conn);
+  const sql = "SELECT * FROM itinerary_days WHERE itinerary_id = ? ORDER BY day_number ASC";
+  if (runner) {
+    const [rows] = await runner.query(sql, [itineraryId]);
+    return rows;
+  }
+  return db.query(sql, [itineraryId]);
+}
+
+export async function deleteItineraryDayByIdForItinerary({ dayId, itineraryId }, conn) {
+  const runner = getRunner(conn);
+  const sql = "DELETE FROM itinerary_days WHERE id = ? AND itinerary_id = ?";
+  const params = [dayId, itineraryId];
+  if (runner) {
+    await runner.query(sql, params);
+    return;
+  }
+  await db.run(sql, params);
+}
+
+export async function updateItineraryDayNumberAndDate({ dayId, dayNumber, date }, conn) {
+  const runner = getRunner(conn);
+  const sql = "UPDATE itinerary_days SET day_number = ?, date = ? WHERE id = ?";
+  const params = [dayNumber, date, dayId];
+  if (runner) {
+    await runner.query(sql, params);
+    return;
+  }
+  await db.run(sql, params);
+}
+
+export async function updateItineraryEndAndTotalByUser({ itineraryId, userId, endDate, totalDays }, conn) {
+  const runner = getRunner(conn);
+  const sql =
+    "UPDATE itineraries SET end_date = ?, total_days = ? WHERE id = ? AND user_id = ?";
+  const params = [endDate, totalDays, itineraryId, userId];
+  if (runner) {
+    await runner.query(sql, params);
+    return;
+  }
+  await db.run(sql, params);
+}

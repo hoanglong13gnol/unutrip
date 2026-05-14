@@ -2,13 +2,16 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:background="@color/primary">
+
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
@@ -30,37 +33,146 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <TextView android:id="@+id/tvTitle" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:textSize="22sp"
-                android:textStyle="bold" android:textColor="@color/text_primary" />
+            <com.google.android.material.card.MaterialCardView
+                style="@style/CardStyle.Destination"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardElevation="3dp"
+                app:strokeColor="@color/divider"
+                app:strokeWidth="1dp">
 
-            <TextView android:id="@+id/tvDates" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:textSize="14sp"
-                android:textColor="@color/text_secondary" android:layout_marginTop="6dp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
 
-            <TextView android:id="@+id/tvDays" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:textSize="14sp"
-                android:textColor="@color/accent" android:layout_marginTop="4dp" />
+                    <TextView
+                        android:id="@+id/tvTitle"
+                        style="@style/Text.H2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="24sp"
+                        tools:text="Chuyến Cao Bằng" />
 
-            <TextView android:id="@+id/tvBudget" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:textSize="14sp"
-                android:textColor="@color/success" android:layout_marginTop="4dp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-            <TextView android:id="@+id/tvDescription" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:textSize="14sp"
-                android:textColor="@color/text_secondary" android:layout_marginTop="16dp"
-                android:lineSpacingMultiplier="1.5" />
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipDateRange"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/primary_dark"
+                            app:chipBackgroundColor="@color/primary_soft"
+                            app:chipStrokeColor="@color/divider"
+                            app:chipStrokeWidth="1dp"
+                            tools:text="2026-05-10 → 2026-05-12" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipDayCount"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:textColor="@color/accent_dark"
+                            app:chipBackgroundColor="@color/accent_light"
+                            app:chipStrokeColor="@color/divider"
+                            app:chipStrokeWidth="1dp"
+                            tools:text="3 ngày" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvBudget"
+                        style="@style/Text.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="@color/success"
+                        android:textStyle="bold"
+                        tools:text="Ngân sách: 3.000.000đ" />
+
+                    <TextView
+                        android:id="@+id/tvDescription"
+                        style="@style/Text.Body"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:lineSpacingMultiplier="1.45"
+                        tools:text="Mô tả lịch trình" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                style="@style/Text.H3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="Lịch theo ngày"
+                android:textColor="@color/primary_dark" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddDay"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="44dp"
+                    android:paddingHorizontal="16dp"
+                    android:text="@string/itinerary_add_day"
+                    android:textAllCaps="false"
+                    android:textSize="13sp"
+                    app:cornerRadius="20dp"
+                    app:icon="@drawable/ic_calendar"
+                    app:iconGravity="textStart"
+                    app:iconPadding="8dp"
+                    app:iconTint="@color/primary"
+                    app:strokeColor="@color/primary"
+                    app:strokeWidth="1dp" />
+
+                <TextView
+                    style="@style/Text.Body"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:text="Kéo dài chuyến hoặc chỉnh từng ngày bên dưới"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rvDays"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:layout_marginTop="12dp"
+
                 android:clipToPadding="false"
-                android:paddingBottom="40dp"
                 android:nestedScrollingEnabled="false"
+                android:paddingBottom="88dp"
                 app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabAddStop"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="20dp"
+        android:contentDescription="@string/itinerary_add_stop_fab"
+        app:backgroundTint="@color/accent"
+        app:srcCompat="@android:drawable/ic_input_add"
+        app:tint="@color/white" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

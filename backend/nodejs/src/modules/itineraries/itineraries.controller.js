@@ -69,6 +69,9 @@ export async function addItineraryItem(req, res) {
     if (!result.ok && result.reason === "no_days") {
       return res.status(400).json({ success: false, message: "No days in itinerary" });
     }
+    if (!result.ok && result.reason === "invalid_day") {
+      return res.status(400).json({ success: false, message: "Ngày không thuộc lịch trình này" });
+    }
 
     return res.json({ success: true, message: "Đã thêm vào lịch trình" });
   } catch (e) {
@@ -113,6 +116,106 @@ export async function updateItinerary(req, res) {
   });
 
   return res.json(apiOk(updatedDto, "OK"));
+}
+
+export async function updateItineraryItem(req, res) {
+  const itineraryId = Number(req.params.id);
+  const itemId = Number(req.params.itemId);
+
+  const schema = z.object({
+    dayId: z.number().int().optional(),
+    destinationId: z.number().int().optional(),
+    startTime: z.string().min(1).optional(),
+    endTime: z.string().min(1).optional(),
+    note: z.string().optional().nullable(),
+    orderIndex: z.number().int().optional()
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, message: "Invalid payload", data: null });
+  }
+
+  const result = await itinerariesService.updateItineraryItemForUser({
+    userId: req.user.userId,
+    itineraryId,
+    itemId,
+    payload: parsed.data
+  });
+
+  if (!result.ok && result.reason === "not_authorized") {
+    return res.status(403).json({ success: false, message: "Not authorized or not found" });
+  }
+  if (!result.ok && result.reason === "not_found") {
+    return res.status(404).json({ success: false, message: "Not found" });
+  }
+  if (!result.ok && result.reason === "invalid_day") {
+    return res.status(400).json({ success: false, message: "Ngày không hợp lệ" });
+  }
+  if (!result.ok && result.reason === "missing_destination_id") {
+    return res.status(400).json({ success: false, message: "Missing destinationId" });
+  }
+
+  return res.json(apiOk(null, "Đã cập nhật hoạt động"));
+}
+
+export async function addItineraryDay(req, res) {
+  const itineraryId = Number(req.params.id);
+  const result = await itinerariesService.addItineraryDayForUser({
+    userId: req.user.userId,
+    itineraryId
+  });
+
+  if (!result.ok && result.reason === "not_authorized") {
+    return res.status(403).json({ success: false, message: "Not authorized or not found" });
+  }
+
+  return res.json(apiOk(null, "Đã thêm ngày"));
+}
+
+export async function deleteItineraryDay(req, res) {
+  const itineraryId = Number(req.params.id);
+  const dayId = Number(req.params.dayId);
+
+  const result = await itinerariesService.deleteItineraryDayForUser({
+    userId: req.user.userId,
+    itineraryId,
+    dayId
+  });
+
+  if (!result.ok && result.reason === "not_authorized") {
+    return res.status(403).json({ success: false, message: "Not authorized or not found" });
+  }
+  if (!result.ok && result.reason === "not_found") {
+    return res.status(404).json({ success: false, message: "Not found" });
+  }
+  if (!result.ok && result.reason === "last_day") {
+    return res.status(400).json({
+      success: false,
+      message: "Cần ít nhất một ngày trong lịch trình"
+    });
+  }
+
+  return res.json(apiOk(null, "Đã xóa ngày"));
+}
+
+export async function deleteItineraryItem(req, res) {
+  const itineraryId = Number(req.params.id);
+  const itemId = Number(req.params.itemId);
+
+  const result = await itinerariesService.deleteItineraryItemForUser({
+    userId: req.user.userId,
+    itineraryId,
+    itemId
+  });
+
+  if (!result.ok && result.reason === "not_authorized") {
+    return res.status(403).json({ success: false, message: "Not authorized or not found" });
+  }
+  if (!result.ok && result.reason === "not_found") {
+    return res.status(404).json({ success: false, message: "Not found" });
+  }
+
+  return res.json(apiOk(null, "Đã xóa hoạt động"));
 }
 
 export async function deleteItinerary(req, res) {

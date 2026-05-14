@@ -1,0 +1,86 @@
+@startuml activity-rag-ai-dashboard-monitor
+' Biểu đồ hoạt động — Giám sát RAG AI Dashboard (Admin)
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 340
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động — Giám sát RAG AI Dashboard**
+
+start
+
+:Quản trị viên đã **đăng nhập Admin**;
+
+:Mở trang **RAG AI** (`GET /admin/rag-ai`);
+
+:Máy chủ Node gọi **song song** tới RAG (FastAPI):\n`/admin/system/overview`, `/admin/rag/status`,\n`/admin/system/self-test`, `/admin/ai/metrics`,\n`/admin/data-quality/status`;
+
+if (**Tất cả gọi RAG thành công đủ để render?**) then (Không)
+  :Trang lỗi **500** hoặc khối KPI báo đỏ / JSON lỗi;
+  stop
+else (Có)
+endif
+
+:Gộp JSON → điền template;\nhiển thị KPI (**ready**, self-test, metrics, data quality,\ntrạng thái file RAG, runtime/cache);
+
+repeat
+  :Quản trị viên xem dashboard và\n(lựa chọn) **làm mới** logs/metrics/issues,\nhoặc **reload place store**, **clear cache**, **debug query**;
+
+  if (**Thao tác AJAX/proxy?**) then (Không)
+    :Tiếp tục quan sát;
+  else (Có)
+    :Gửi yêu cầu tới Node `/admin/rag-ai/...` tương ứng;
+
+    :Node chuyển tiếp GET/POST tới RAG **`/admin/...`**;
+
+    if (**Upstream RAG phản hồi OK?**) then (Không)
+      :Hiển thị **502**/lỗi timeout trên UI;
+    else (Có)
+      :Cập nhật bảng nhật ký / metrics /\nkết quả thao tác;
+    endif
+  endif
+
+repeat while (**Còn phiên giám sát?**) is (Có)
+-> Không;
+
+:Đóng trang hoặc chuyển mục Admin khác;
+
+stop
+
+@enduml

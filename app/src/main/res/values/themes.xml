@@ -124,6 +124,10 @@
         <item name="android:fontFamily">sans-serif-rounded</item>
     </style>
 
+    <style name="BottomSheetSmartTravel" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+
     <style name="Chip.Category" parent="Widget.Material3.Chip.Filter">
         <item name="chipCornerRadius">18dp</item>
         <item name="chipMinHeight">38dp</item>

@@ -1,0 +1,91 @@
+@startuml rag-ai-dashboard-monitor-sequence
+!include _unutrip-sequence-theme.puml
+
+title **Giám sát RAG AI Dashboard — tải trang & thao tác quản trị**
+
+actor "**Quản trị viên**" as Admin
+
+participant "**Trình duyệt**\n(Admin UI)" as Browser <<Presentation>>
+participant "**Admin API Node.js**\n`/admin/rag-ai*`" as Node <<Application>>
+participant "**RAG Service**\n(FastAPI)" as RAG <<AI>>
+
+autonumber "<b>#.</b>"
+
+== Phiên đã đăng nhập — mở dashboard ==
+
+Admin -> Browser : Mở **RAG AI** (`GET /admin/rag-ai`)
+activate Browser
+
+Browser -> Node : **GET** `/admin/rag-ai`
+activate Node
+
+Node -> RAG : **Song song 5 GET:**\n`/admin/system/overview`, `/admin/rag/status`,\n`/admin/system/self-test`, `/admin/ai/metrics`,\n`/admin/data-quality/status`
+activate RAG
+RAG --> Node : **JSON** overview, rag-files, self-test,\nai-metrics, data-quality
+deactivate RAG
+
+Node -> Node : Ghép dữ liệu → điền template **ragAi**
+Node --> Browser : **200** HTML dashboard (KPI, checklist, JSON boxes)
+deactivate Node
+
+Browser --> Admin : Hiển thị giám sát (sẵn sàng, metrics, chất lượng dữ liệu…)
+deactivate Browser
+
+
+== Làm mới chi tiết (AJAX — tùy chọn) ==
+
+Admin -> Browser : Xem **nhật ký AI** / làm mới metrics / danh sách issues
+activate Browser
+Browser -> Node : **GET** `/admin/rag-ai/ai-logs` hoặc `/ai-metrics`\nhoặc `/data-quality-issues`
+activate Node
+Node -> RAG : **GET** `/admin/ai/logs` · `/admin/ai/metrics`\nhoặc `/admin/data-quality/issues`
+activate RAG
+RAG --> Node : JSON (logs / metrics / issues)
+deactivate RAG
+Node --> Browser : **200** JSON (proxy)
+deactivate Node
+Browser --> Admin : Cập nhật bảng / khối hiển thị
+deactivate Browser
+
+
+== Thao tác vận hành ==
+
+Admin -> Browser : **Reload** place store / **Xóa cache** / **Debug query**
+activate Browser
+alt Reload kho địa điểm trong RAG
+  Browser -> Node : **POST** `/admin/rag-ai/reload-place-store`
+  activate Node
+  Node -> RAG : **POST** `/admin/rag/place-store/reload`
+  activate RAG
+  RAG --> Node : Kết quả reload
+  deactivate RAG
+  Node --> Browser : **200** hoặc **502**
+  deactivate Node
+else Xóa cache phản hồi RAG
+  Browser -> Node : **POST** `/admin/rag-ai/clear-cache`
+  activate Node
+  Node -> RAG : **POST** `/admin/cache/clear`
+  activate RAG
+  RAG --> Node : Trạng thái cache
+  deactivate RAG
+  Node --> Browser : **200** hoặc **502**
+  deactivate Node
+else Thử truy vấn debug (message)
+  Browser -> Node : **POST** `/admin/rag-ai/debug-query`\n(body: message)
+  activate Node
+  Node -> RAG : **POST** `/admin/ai/debug-query`
+  activate RAG
+  RAG --> Node : Kết quả debug / lỗi upstream
+  deactivate RAG
+  Node --> Browser : **200** / **400** / **502**
+  deactivate Node
+end
+Browser --> Admin : Phản hồi trên UI (toast / JSON)
+deactivate Browser
+
+legend right
+  **Luồng chính** khớp **`registerRagAiAdminRoutes`** trong **`backend/nodejs/src/admin/ragAi.admin.routes.js`**.\\
+  Node gọi RAG qua **`RAG_BASE_URL`** (Compose thường là **`http://rag:8001`**); các đường dẫn **`/admin/...`** trên RAG dùng header **`X-RAG-Internal-Key`** khi cấu hình **`RAG_INTERNAL_API_KEY`**.
+endlegend
+
+@enduml

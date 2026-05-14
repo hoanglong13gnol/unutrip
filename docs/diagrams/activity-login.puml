@@ -1,0 +1,74 @@
+@startuml ActivityLogin
+' Biểu đồ hoạt động — Đăng nhập (cùng thiết kế activity-registration)
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Đăng nhập**
+
+start
+
+:Mở màn hình đăng nhập;
+
+:Nhập email / mật khẩu và nhấn **Đăng nhập**;
+
+:Kiểm tra dữ liệu nhập;
+
+if (**Hợp lệ?**) then (Không)
+  :Thông báo lỗi nhập liệu;
+  stop
+else (Có)
+endif
+
+:Xác thực với CSDL (**so khớp** mật khẩu);
+
+if (**Đúng tài khoản?**) then (Không)
+  :Thông báo sai email hoặc mật khẩu;
+  stop
+else (Có)
+endif
+
+:Tạo **JWT** và lưu phiên cục bộ;
+
+:Vào màn hình chính;
+
+stop
+
+@enduml

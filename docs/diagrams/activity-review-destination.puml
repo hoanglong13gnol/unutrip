@@ -1,0 +1,68 @@
+@startuml ActivityReviewDestination
+' Biểu đồ hoạt động — Đánh giá địa điểm
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Đánh giá địa điểm**
+
+start
+
+:Mở **chi tiết địa điểm** và khu vực đánh giá;
+
+:Tải danh sách đánh giá từ máy chủ;
+
+:Hiển thị sao và bình luận hiện có;
+
+:Nhập **điểm sao**, nhận xét và\n(tùy chọn) đính ảnh;
+
+if (**Nội dung hợp lệ?**) then (Không)
+  :Thông báo lỗi nhập liệu;
+  stop
+else (Có)
+endif
+
+:Gửi **POST** đánh giá và **lưu** vào CSDL\n(+ upload ảnh nếu có);
+
+:Cập nhật danh sách đánh giá trên màn hình;
+
+stop
+
+@enduml

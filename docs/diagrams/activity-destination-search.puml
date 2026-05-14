@@ -1,0 +1,72 @@
+@startuml ActivityDestinationSearch
+' Biểu đồ hoạt động — Tìm kiếm / lọc địa điểm (GET /destinations + query)
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Tìm kiếm địa điểm**
+
+start
+
+:Mở **Khám phá** hoặc ô tìm kiếm;
+
+:Chọn bộ lọc (**tỉnh**, **danh mục**)\nvà/hoặc nhập **từ khóa**;
+
+:Nhấn tìm / làm mới (**kéo refresh**\nhặc đổi trang);
+
+:Gửi **GET** danh sách địa điểm\n(kèm **JWT** và tham số truy vấn);
+
+if (**Truy vấn CSDL thành công?**) then (Không)
+  :Thông báo không tải được danh sách;
+  stop
+else (Có)
+endif
+
+if (**Có kết quả?**) then (Không)
+  :Hiển thị **danh sách trống**\nhặc gợi ý đổi bộ lọc;
+  stop
+else (Có)
+endif
+
+:Hiển thị danh sách và cho phép\nxem chi tiết / phân trang;
+
+stop
+
+@enduml

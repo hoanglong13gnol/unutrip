@@ -1,0 +1,79 @@
+@startuml
+skinparam shadowing false
+skinparam ArrowColor #333333
+skinparam ActivityBorderColor #1F497D
+skinparam ActivityBackgroundColor #F2F8FF
+skinparam noteBorderColor #7F9DB9
+skinparam noteBackgroundColor #FFFEF5
+
+title Luồng quản trị dữ liệu — Quản trị viên UNU Trip\nĐường dẫn /admin (luồng chính thành công)
+
+
+legend right
+  |_<#F2F8FF>_ Ghi chú vận hành _|
+  |_ Basic Auth khi có đủ ADMIN_BASIC_USER và ADMIN_BASIC_PASS _|
+  |_ RAG: proxy tới các path FastAPI /admin/* trên RAG_BASE_URL _|
+end legend
+
+
+|Quản trị viên|
+start
+:Bước 1: Truy cập đường dẫn quản trị\nhttp(s)://host/port/admin/\ntrên máy chủ backend UNU Trip;
+
+
+|Giao diện Web admin|
+:Mở phiên — gửi HTTP GET\nvề router /admin/... của Node;
+
+
+|Backend Node|
+if (Đã bật Basic Auth\ntheo cấu hình env đầy đủ) then (có)
+
+|Quản trị viên|
+:Bước 2: Nhập tài khoản\nvà mật khẩu quản trị;
+
+
+|Backend Node|
+:Bước 3: Xác thực\nso khớp header Authorization Basic;
+
+else (không)
+
+|Backend Node|
+:Môi trường không bắt buộc Basic Auth,\ntiếp tục middleware định tuyến;
+
+endif
+
+
+|Quản trị viên|
+:Bước 4: Duyệt dashboard\nhoặc mở các nhóm dữ liệu:\nNgười dùng • Địa điểm • Hệ thống •\nBáo cáo AI / Giám sát RAG;
+
+
+|Giao diện Web admin|
+:Gửi lần tải trang và thao tác form\n(GET/POST) tới các route cụ thể;
+
+
+|Backend Node|
+:Bước 5: Định tuyến handler theo chức năng\n(ví dụ /dashboard,\n/users, /destinations, /system,\n/rag-ai, /ai-report);
+:Truy vấn hoặc cập nhật MySQL,\nproxy HTTP tới FastAPI admin khi chức năng cần;
+
+
+|MySQL và dịch vụ RAG|
+:Thực thi các thao tác dữ liệu tương ứng\n(SQL repository hoặc\nendpoint /admin/... trên dịch vụ RAG);
+
+
+|Backend Node|
+:Chuẩn hoá và render phản hồi:\nHTML phía máy chủ SSR\nhoặc JSON đáp ajax;
+
+
+|Giao diện Web admin|
+:Bước 6: Trình bày kết quả trên UI:\nkpi • bảng • biểu mẫu • thông báo\nvận hành (mã HTTP, ô raw JSON);
+
+
+|Quản trị viên|
+stop
+
+floating note right
+Không có lưu mật khẩu quản trị tại tier CSDL/RAG;
+tier này chỉ xử lý nghiệp vụ và snapshot upstream.
+end note
+
+@enduml

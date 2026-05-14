@@ -1,0 +1,41 @@
+@startuml WeatherView_Sequence
+!include _unutrip-sequence-theme.puml
+
+title **Quy trình xem thời tiết**
+
+actor "**User**" as User
+
+participant "**Ứng dụng Android**" as UI <<Presentation>>
+participant "**WeatherService**" as WS <<Domain>>
+participant "**Open-Meteo API**" as OM <<External>>
+
+autonumber "<b>#.</b>"
+
+User -> UI : Chọn khu vực / thành phố trên giao diện
+
+activate UI
+
+UI -> WS : `getWeather(cityName)`
+activate WS
+
+WS -> WS : Ánh xạ tên → **lat/lng** (bảng trong app;\nmặc định Hà Nội nếu không khớp)
+
+WS -> OM : **HTTPS GET** `/v1/forecast`\n(latitude, longitude, current, daily, timezone…)
+activate OM
+OM --> WS : JSON hiện tại + **daily** (dự báo)
+deactivate OM
+
+WS -> WS : Parse → **WeatherInfo** + forecast
+
+WS --> UI : **Success** (nhiệt độ, ẩm, gió, mã thời tiết…)
+deactivate WS
+
+UI --> User : Hiển thị thời tiết và vài ngày tới
+
+deactivate UI
+
+legend right
+  **Không đi qua backend UNU Trip.** **Open-Meteo** miễn phí, không cần API key\n(theo `WeatherService.kt`).
+endlegend
+
+@enduml

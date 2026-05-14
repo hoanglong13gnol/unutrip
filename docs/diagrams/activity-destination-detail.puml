@@ -1,0 +1,62 @@
+@startuml ActivityDestinationDetail
+' Biểu đồ hoạt động — Xem chi tiết địa điểm
+
+skinparam dpi 130
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam wrapWidth 320
+
+skinparam nodesep 95
+skinparam ranksep 58
+skinparam Padding 10
+
+skinparam backgroundColor #FFFFFF
+
+skinparam title {
+  FontSize 17
+  FontColor #111111
+}
+
+skinparam activity {
+  BackgroundColor #F3F3F3
+  BorderColor #222222
+  FontColor #111111
+  RoundCorner 16
+  DiamondBackgroundColor #E0E0E0
+  DiamondBorderColor #222222
+}
+
+skinparam activityDiamond {
+  BackgroundColor #E0E0E0
+  BorderColor #222222
+}
+
+skinparam arrow {
+  Color #111111
+}
+
+skinparam activityStartColor #111111
+skinparam activityEndColor #111111
+
+scale max 1680 width
+
+title **Biểu đồ hoạt động - Xem chi tiết địa điểm**
+
+start
+
+:Từ danh sách chọn một địa điểm;
+
+:Gửi yêu cầu **chi tiết** (đã đăng nhập);
+
+if (**Tìm thấy trong CSDL?**) then (Không)
+  :Thông báo không có dữ liệu;
+  stop
+else (Có)
+endif
+
+:Hiển thị ảnh, mô tả, đánh giá\nvà các thao tác (yêu thích, bản đồ…);
+
+stop
+
+@enduml
