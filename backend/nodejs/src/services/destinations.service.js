@@ -1,5 +1,5 @@
 import * as destinationsRepository from "../repositories/destinations.repository.js";
-import { attachDestinationImages, toDestinationDto } from "../routes/helpers.js";
+import { attachDestinationImages, toDestinationDto } from "../shared/dto/destinationDto.js";
 
 export async function listDestinationsPage({ userId, category, province, search, limit, offset }) {
   const total = await destinationsRepository.countDestinations({ category, province, search });

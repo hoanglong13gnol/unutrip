@@ -1868,6 +1868,35 @@ These remain queued for Phase 6.
 - **`npm test`:** `Test Files 6 passed (6)` / `Tests 17 passed (17)` (`tests/admin.router.test.js`, `tests/adminAuth.middleware.test.js` unchanged intent).
 - **`npm run lint`:** clean on `src/` and `tests/`.
 
+## 20. Technical debt follow-up (transactions + DTO imports)
+
+> **Follow-on cleanup on `v2/database-refactor` after Phase 7.** Narrows remaining inconsistencies called out in §2.5 / §15.6: non-transactional multi-write flows and the `routes/helpers.js` indirection for first-party modules.
+
+### 20.1 Transactional boundaries
+
+- **`createItineraryWithDaysAndItems`** (`itineraries.service.js`) — the itinerary + all days + items are now persisted inside a single **`withTransaction`** so a mid-flight failure cannot leave a partial itinerary tree.
+- **`createReview`** (`reviews.service.js`) — **`insertReview`** + **`getReviewAggregateByDestinationId`** + **`updateDestinationReviewAggregate`** now share one transaction. **`reviews.repository.js`** accepts an optional MySQL connection (same `getRunner` pattern as **`itineraries.repository.js`**) for those calls.
+
+### 20.2 DTO import hygiene (Phase 7 work item C)
+
+- First-party modules now import **`toUserDto`**, **`getUserById`**, **`firstArrayValue`**, **`normalizeCategoryParam`**, **`attachDestinationImages`**, **`toDestinationDto`**, and itinerary DTO helpers directly from **`src/shared/dto/*.js`**. **`src/routes/helpers.js`** remains a **documented re-export shim** for any external or legacy import paths.
+
+### 20.3 Files touched
+
+- `backend/nodejs/src/repositories/reviews.repository.js`
+- `backend/nodejs/src/services/reviews.service.js`
+- `backend/nodejs/src/services/itineraries.service.js`
+- `backend/nodejs/src/services/destinations.service.js`
+- `backend/nodejs/src/services/favorites.service.js`
+- `backend/nodejs/src/modules/auth/auth.controller.js`
+- `backend/nodejs/src/modules/users/users.controller.js`
+- `backend/nodejs/src/modules/destinations/destinations.controller.js`
+- `backend/nodejs/src/routes/helpers.js` (comment only)
+
+### 20.4 Verification
+
+- **`npm test`** / **`npm run lint`** in `backend/nodejs/` — run after this change; regressions block merge.
+
 ---
 
 *End of `README_FIX_ALL.md`. This document is the single source of truth for the upcoming refactor phases. Update it at the end of each phase to reflect new realities.*

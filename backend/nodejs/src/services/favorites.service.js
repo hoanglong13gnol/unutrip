@@ -1,4 +1,4 @@
-import { attachDestinationImages, toDestinationDto } from "../routes/helpers.js";
+import { attachDestinationImages, toDestinationDto } from "../shared/dto/destinationDto.js";
 import * as favoritesRepository from "../repositories/favorites.repository.js";
 
 export async function listUserFavorites(userId) {

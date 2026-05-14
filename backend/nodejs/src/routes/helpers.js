@@ -1,5 +1,5 @@
 /**
- * Phase 5 compatibility shim — implementation moved to
+ * Phase 5 / Phase 8 compatibility shim — implementation lives in
  * `src/shared/dto/{user,destination,itinerary}Dto.js`.
  * Kept as a re-export so any external import of this path keeps working.
  */

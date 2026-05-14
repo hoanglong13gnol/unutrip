@@ -1,4 +1,4 @@
-import { normalizeCategoryParam } from "../../routes/helpers.js";
+import { normalizeCategoryParam } from "../../shared/dto/destinationDto.js";
 import * as destinationsService from "../../services/destinations.service.js";
 
 export async function listDestinations(req, res) {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { apiOk } from "../../utils.js";
-import { getUserById, toUserDto, firstArrayValue } from "../../routes/helpers.js";
+import { getUserById, toUserDto, firstArrayValue } from "../../shared/dto/userDto.js";
 import * as usersRepository from "../../repositories/users.repository.js";
 
 export async function getProfile(req, res) {

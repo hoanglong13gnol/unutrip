@@ -1,5 +1,6 @@
 import { parseJsonArray } from "../utils.js";
-import { getUserById } from "../routes/helpers.js";
+import { getUserById } from "../shared/dto/userDto.js";
+import { withTransaction } from "../shared/db/withTransaction.js";
 import * as reviewsRepository from "../repositories/reviews.repository.js";
 
 export async function listReviewsForDestination(destinationId) {
@@ -26,19 +27,29 @@ export async function createReview({ userId, destinationId, rating, comment, ima
   const urls = Array.isArray(imageUrls) ? imageUrls : [];
   const imagesJson = urls.length > 0 ? JSON.stringify(urls) : null;
 
-  const info = await reviewsRepository.insertReview({
-    userId,
-    destinationId,
-    rating,
-    comment,
-    imagesJson
-  });
+  const info = await withTransaction(async (conn) => {
+    const insertInfo = await reviewsRepository.insertReview(
+      {
+        userId,
+        destinationId,
+        rating,
+        comment,
+        imagesJson
+      },
+      conn
+    );
 
-  const agg = await reviewsRepository.getReviewAggregateByDestinationId(destinationId);
-  await reviewsRepository.updateDestinationReviewAggregate({
-    destinationId,
-    rating: Number(agg.avg ?? 0),
-    reviewCount: Number(agg.cnt ?? 0)
+    const agg = await reviewsRepository.getReviewAggregateByDestinationId(destinationId, conn);
+    await reviewsRepository.updateDestinationReviewAggregate(
+      {
+        destinationId,
+        rating: Number(agg.avg ?? 0),
+        reviewCount: Number(agg.cnt ?? 0)
+      },
+      conn
+    );
+
+    return insertInfo;
   });
 
   const user = await getUserById(userId);

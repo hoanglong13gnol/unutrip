@@ -5,11 +5,13 @@ import { withTransaction } from "../shared/db/withTransaction.js";
 import { DEFAULT_AI_ITINERARY_TIME_SLOTS } from "../shared/utils/timeSlots.js";
 import {
   attachDestinationImages,
+  toDestinationDto
+} from "../shared/dto/destinationDto.js";
+import {
   flattenSelectedOptionDays,
   itineraryRowToDto,
-  resolveDestinationIdsFromSelection,
-  toDestinationDto
-} from "../routes/helpers.js";
+  resolveDestinationIdsFromSelection
+} from "../shared/dto/itineraryDto.js";
 
 export async function listItinerariesForUser(userId) {
   const rows = await itinerariesRepository.listItinerariesByUserId(userId);
@@ -68,41 +70,54 @@ export async function createItineraryWithDaysAndItems({ userId, payload }) {
     totalDays
   } = payload;
 
-  const info = await itinerariesRepository.insertItinerary({
-    userId,
-    title,
-    description,
-    startDate: toIsoDate(startDate),
-    endDate: toIsoDate(endDate),
-    totalDays,
-    estimatedBudget
-  });
+  const itineraryId = await withTransaction(async (conn) => {
+    const info = await itinerariesRepository.insertItinerary(
+      {
+        userId,
+        title,
+        description,
+        startDate: toIsoDate(startDate),
+        endDate: toIsoDate(endDate),
+        totalDays,
+        estimatedBudget
+      },
+      conn
+    );
 
-  const itineraryId = Number(info.lastInsertRowid);
-  const destIds = Array.isArray(destinationIds) ? destinationIds : [];
+    const newItineraryId = Number(info.lastInsertRowid);
+    const destIds = Array.isArray(destinationIds) ? destinationIds : [];
 
-  for (let d = 0; d < totalDays; d++) {
-    const date = new Date(toIsoDate(startDate));
-    date.setDate(date.getDate() + d);
-    const dayInfo = await itinerariesRepository.insertItineraryDay({
-      itineraryId,
-      dayNumber: d + 1,
-      date: toIsoDate(date)
-    });
-    const dayId = Number(dayInfo.lastInsertRowid);
+    for (let d = 0; d < totalDays; d++) {
+      const date = new Date(toIsoDate(startDate));
+      date.setDate(date.getDate() + d);
+      const dayInfo = await itinerariesRepository.insertItineraryDay(
+        {
+          itineraryId: newItineraryId,
+          dayNumber: d + 1,
+          date: toIsoDate(date)
+        },
+        conn
+      );
+      const dayId = Number(dayInfo.lastInsertRowid);
 
-    const chunk = destIds.slice(d * 2, d * 2 + 2);
-    for (const [idx, destId] of chunk.entries()) {
-      await itinerariesRepository.insertItineraryItem({
-        dayId,
-        destinationId: destId,
-        startTime: idx === 0 ? "09:00" : "14:00",
-        endTime: idx === 0 ? "12:00" : "17:00",
-        note: null,
-        orderIndex: idx
-      });
+      const chunk = destIds.slice(d * 2, d * 2 + 2);
+      for (const [idx, destId] of chunk.entries()) {
+        await itinerariesRepository.insertItineraryItem(
+          {
+            dayId,
+            destinationId: destId,
+            startTime: idx === 0 ? "09:00" : "14:00",
+            endTime: idx === 0 ? "12:00" : "17:00",
+            note: null,
+            orderIndex: idx
+          },
+          conn
+        );
+      }
     }
-  }
+
+    return newItineraryId;
+  });
 
   const it = await itinerariesRepository.getItineraryById(itineraryId);
   return itineraryRowToDto(it, null);

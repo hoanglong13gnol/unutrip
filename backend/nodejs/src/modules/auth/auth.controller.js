@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { apiOk } from "../../utils.js";
 import { signToken } from "../../auth.js";
-import { toUserDto } from "../../routes/helpers.js";
+import { toUserDto } from "../../shared/dto/userDto.js";
 import * as usersRepository from "../../repositories/users.repository.js";
 
 export async function register(req, res) {
